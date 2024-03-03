@@ -7,17 +7,15 @@ from nltk.corpus import wordnet
 from nltk.corpus import wordnet
 from nltk.stem import WordNetLemmatizer
 
-STOP_WORDS = frozenset(stopwords.words("english")) + ["category", "references", "also", "links", "external", "people"]
-
+STOP_WORDS = frozenset(stopwords.words("english"))
+CORPUS_STOP_WORDS = ["category", "references", "also", "links", "external", "people"]
 
 
 class retrievalModel:
 
     def __init__(self):
-
-        self.BM25_dic = dict();
+        self.BM25_dic = dict()
         self.lemmatizer = WordNetLemmatizer()
-
 
     def get_wordnet_pos(word):
         tag = nltk.pos_tag([word])[0][1][0].upper()
