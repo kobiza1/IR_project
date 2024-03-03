@@ -138,13 +138,13 @@ class search_engine:
     #     stem_body_pr_docs = self.pr_docs_from_relevant_docs(stem_body_first_res)
     #     stem_title_pr_docs = self.pr_docs_from_relevant_docs(stem_title_first_res)
 
-    def stem_bigram_dl_find_candidates(self, query_words, tfidfOrbm25):
+    def stem_bigram_dl_find_candidates(self, query_words, tfidf_or_m25):
 
         # stem and bigram with doc len normalization:
         bigram_body_first_res = self.search_by_index(query_words, BIGRAM_BODY_FOLDER)
         bigram_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_FOLDER)
 
-        if tfidfOrbm25:
+        if tfidf_or_m25:
             sorted_body, sorted_title = self.tfidf_stem_bigram_dl_find_candidates(bigram_body_first_res, bigram_title_first_res)
         else:
             sorted_body, sorted_title = self.bm25_stem_bigram_dl_find_candidates(bigram_body_first_res, bigram_title_first_res)
@@ -276,7 +276,7 @@ class search_engine:
             tokens = [' '.join(bigram) for bigram in tokens]
         return tokens
 
-    def sort_ranked_docs(self, ranked_docs, limit=1000):  #TODO: NEED LIMIT? IF YES HOW MUCH?
+    def sort_ranked_docs(self, ranked_docs, limit=1000):  # TODO: NEED LIMIT? IF YES HOW MUCH?
 
         sorted_ranked_docs = list(sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True))
         if limit > len(sorted_ranked_docs):
@@ -300,5 +300,3 @@ class search_engine:
                 else:
                     rel_docs[doc_id] = [(term, tf)]
         return rel_docs
-
-
