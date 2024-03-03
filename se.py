@@ -17,9 +17,7 @@ import itertools
 from pathlib import Path
 import nltk
 from nltk.stem.porter import *
-from nltk.corpus import stopwords
 from nltk.util import ngrams
-from nltk.corpus import wordnet
 
 nltk.download("wordnet")
 from datetime import datetime
@@ -31,11 +29,6 @@ from pathlib import Path
 from operator import itemgetter
 from google.cloud import storage
 
-from scipy.sparse import csr_matrix
-from numpy import dot
-from numpy.linalg import norm
-
-from sklearn.feature_extraction.text import TfidfVectorizer
 from collections import Counter, OrderedDict, defaultdict
 
 from inverted_index_gcp import InvertedIndex, MultiFileReader
@@ -97,6 +90,9 @@ corpus_stopwords = [
 SIZE_OF_WIKI = 6348910
 DOCUMENT_NORMALIZATION_SIZE = 20000
 
+WEIGHTS = {'pr': 0.4, 'tfidf-cosin': 0.3, 'bm25-cosin': 0.3}
+
+
 ALL_STOP_WORDS = english_stopwords.union(corpus_stopwords)
 RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
 BUCKET_NAME = "tfidf_bucket_318437159"
@@ -110,10 +106,11 @@ INDEX_FOLDER = 'inverted_indices'
 
 
 class search_engine:
+
     def __init__(self):
         self.inverted_indexes_dict = dict()
         self.term_idf_dict = dict()
-        self.caching_docs = dict()
+        self.caching_docs = dict()  # (key) (index_name, term) : (val) posting_list
         self.pr = dict()
         self.averageDl = dict()
         self._load_indices()
@@ -121,9 +118,84 @@ class search_engine:
 
     def init_average_dl(self, index):
         total_sum = sum(index.dl.values())
-
         # Calculate the average
         return total_sum / len(index.dl)
+
+    def search(self, query):
+
+        query_words = self.fit_query(query, True)
+
+        # # only stemming:
+        # stem_body_first_res = self.search_by_index(query_words, STEMMING_BODY_FOLDER)
+        # stem_title_first_res = self.search_by_index(query_words, STEMMING_TITLE_FOLDER)
+        #
+        # # tf - idf and cosin:
+        # body_ranked_docs = self.rank_docs_by_fast_cosin(stem_body_first_res, STEMMING_BODY_FOLDER, True)
+        # sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        # title_ranked_docs = self.rank_docs_by_fast_cosin(stem_title_first_res, STEMMING_TITLE_FOLDER, True)
+        # sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+        #
+        # #bm-25 and cosin:
+        # body_ranked_docs = self.rank_docs_by_fast_cosin(stem_body_first_res, STEMMING_BODY_FOLDER, False)
+        # sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        # title_ranked_docs = self.rank_docs_by_fast_cosin(stem_title_first_res, STEMMING_TITLE_FOLDER, False)
+        # sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+        #
+        # # page rank:
+        # body_pr_docs = self.pr_docs_from_relevant_docs(stem_body_first_res)
+        # title_pr_docs = self.pr_docs_from_relevant_docs(stem_title_first_res)
+
+        # stem and bigram:
+        bigram_body_first_res = self.search_by_index(query_words, BIGRAM_BODY_FOLDER)
+        bigram_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_FOLDER)
+
+        # tf - idf and cosin doc len normalization:
+        body_ranked_docs = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_FOLDER, True)
+        sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        title_ranked_docs = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_TITLE_FOLDER, True)
+        sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+
+        # bm-25 and cosin:
+        body_ranked_docs = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_FOLDER, False)
+        sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        title_ranked_docs = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_TITLE_FOLDER, False)
+        sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+
+        # page rank:
+        body_pr_docs = self.pr_docs_from_relevant_docs(bigram_body_first_res)
+        title_pr_docs = self.pr_docs_from_relevant_docs(bigram_title_first_res)
+
+        # # stem and bigram most common word normalization: # TODO: KEEP UP
+        # bigram_body_first_res = self.search_by_index(query_words, BIGRAM_BODY_MOST_COMMON_FOLDER)
+        # bigram_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_MOST_COMMON_FOLDER)
+        #
+        # # tf - idf and cosin:
+        # body_ranked_docs = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_MOST_COMMON_FOLDER, True)
+        # sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        # title_ranked_docs = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_TITLE_MOST_COMMON_FOLDER, True)
+        # sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+        #
+        # # bm-25 and cosin:
+        # body_ranked_docs = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_MOST_COMMON_FOLDER, False)
+        # sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        # title_ranked_docs = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_TITLE_MOST_COMMON_FOLDER, False)
+        # sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+        #
+        # # page rank:
+        # body_pr_docs = self.pr_docs_from_relevant_docs(bigram_body_first_res)
+        # title_pr_docs = self.pr_docs_from_relevant_docs(bigram_title_first_res)
+
+
+
+
+        # bigram_mcw_title_first_res = self.search_by_index(query_words, BIGRAM_BODY_MOST_COMMON_FOLDER)
+        # bigram_mcw_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_MOST_COMMON_FOLDER)
+        body_ranked_docs = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_FOLDER, True)
+        sorted_ranked_docs = self.sort_ranked_docs(body_ranked_docs)
+        title_ranked_docs = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_BODY_FOLDER, True)
+        sorted_ranked_docs = self.sort_ranked_docs(title_ranked_docs)
+        body_pr_docs = self.pr_docs_from_relevant_docs(bigram_body_first_res)
+        title_pr_docs = self.pr_docs_from_relevant_docs(bigram_title_first_res)
 
     def load_index(self, bucket, path_to_folder, index_name):
         pickle_index = pickle.loads(bucket.get_blob(path_to_folder).download_as_string())
@@ -148,7 +220,7 @@ class search_engine:
 
     def _load_indices(self):
         """
-        load all indices from buckets and keep them in a dict objects.
+        load all indices from buckets and keep them in main memory.
         """
         try:
             client = storage.Client()
@@ -164,9 +236,9 @@ class search_engine:
             self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_MOST_COMMON_FOLDER}.pkl',
                             BIGRAM_TITLE_MOST_COMMON_FOLDER)
 
-            print("loading page views")
-            # loading pageview
-            self.pv = pickle.loads(bucket.get_blob("wid2pv.pkl").download_as_string())
+            # print("loading page views")
+            # # loading pageview
+            # self.pv = pickle.loads(bucket.get_blob("wid2pv.pkl").download_as_string())
 
             # page ranks to dict
             print("loading page rank")
@@ -180,6 +252,23 @@ class search_engine:
 
     def calculate_bm25(self, idf, tf, dl, ave_dl, k=1.5, b=0.75):
         return idf * (tf * (k + 1) / (tf + k * (1 - b + b * (dl / ave_dl))))
+
+    def sort_ranked_docs(self, ranked_docs, limit=1000):  #TODO: NEED LIMIT? IF YES HOW MUCH?
+        sorted_ranked_docs = list(sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True))
+        if limit > len(sorted_ranked_docs):
+            return sorted_ranked_docs
+        return sorted_ranked_docs[:limit]
+
+    def pr_docs_from_relevant_docs(self, rel_docs):
+        pr_docs = Counter()
+        for doc_id in rel_docs.keys():
+            if doc_id in self.pr:
+                page_rank = self.pr[doc_id]
+                pr_docs[doc_id] = page_rank
+            else:
+                pr_docs[doc_id] = 0
+
+        return self.sort_ranked_docs(pr_docs)
 
     def calc_rank(self, tf, idf, tfidf_or_bm25, index_name, doc_id):
 
@@ -211,24 +300,7 @@ class search_engine:
 
         return ranked_docs
 
-    def sort_ranked_docs(self, ranked_docs, limit):
-        sorted_ranked_docs = list(sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True))
-        if limit > len(sorted_ranked_docs):
-            return sorted_ranked_docs
-        return sorted_ranked_docs[:limit]
 
-    def search(self, query):
-        query_words = self.fit_query(query, True)
-        bigram_body_first_res = self.search_by_index(query_words, BIGRAM_BODY_FOLDER)
-        bigram_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_FOLDER)
-        # stem_title_first_res = self.search_by_index(query_words, STEMMING_BODY_FOLDER)
-        # stem_title_first_res = self.search_by_index(query_words, STEMMING_TITLE_FOLDER)
-        # bigram_mcw_title_first_res = self.search_by_index(query_words, BIGRAM_BODY_MOST_COMMON_FOLDER)
-        # bigram_mcw_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_MOST_COMMON_FOLDER)
-        ranked_docs_body = self.rank_docs_by_fast_cosin(bigram_body_first_res, BIGRAM_BODY_FOLDER, True)
-        sorted_ranked_docs = self.sort_ranked_docs(ranked_docs_body, 100)
-        ranked_docs_title = self.rank_docs_by_fast_cosin(bigram_title_first_res, BIGRAM_BODY_FOLDER, True)
-        sorted_ranked_docs = self.sort_ranked_docs(ranked_docs_title, 100)
 
     def fit_query(self, query, bigram):
         tokens = [token.group() for token in RE_WORD.finditer(query.lower())]
@@ -241,15 +313,34 @@ class search_engine:
         return tokens
 
     def search_by_index(self, query_words, index_name):
-        # TODO cashing!!!!!
         index = self.inverted_indexes_dict[index_name]
         unique_words = np.unique(query_words)
         rel_docs = dict()
         for term in unique_words:
-            posting_list = index.read_a_posting_list(index_name, term)
+            if (index_name, term) in self.caching_docs and (len(self.caching_docs) <= 2000):  #TODO: NEED LIMIT? IF YES HOW MUCH?
+                posting_list = self.caching_docs[(index_name, term)]
+            else:
+                posting_list = index.read_a_posting_list(index_name, term)
+                self.caching_docs[(index_name, term)] = posting_list
             for doc_id, tf in posting_list:
                 if doc_id in rel_docs:
                     rel_docs[doc_id] += [(term, tf)]
                 else:
                     rel_docs[doc_id] = [(term, tf)]
         return rel_docs
+
+    def rank_docs_by_euclidean_dis(self, rel_docs, index_name, tfidf_or_bm25):
+
+        ranked_docs = Counter()
+        idf_dic = self.term_idf_dict[index_name]
+        for doc_id, tups in rel_docs:  # tups = [(term1, tf1), (term2, tf2)...]
+            dl = self.get_doc_len(doc_id, index_name)
+            for term, tf in tups:
+                idf = idf_dic[term]
+                rank = self.calc_rank(tf, idf, tfidf_or_bm25, index_name, doc_id)
+                if doc_id in ranked_docs:
+                    ranked_docs[doc_id] += rank / dl
+                else:
+                    ranked_docs[doc_id] = rank / dl
+
+        return ranked_docs
