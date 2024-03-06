@@ -1,7 +1,6 @@
 import io
 import gzip
 import csv
-import pickle
 import numpy as np
 import math
 from nltk.stem.porter import *
@@ -10,7 +9,7 @@ from google.cloud import storage
 from collections import Counter, defaultdict
 from nltk.corpus import stopwords
 from google.oauth2 import service_account
-
+from inverted_index_gcp import InvertedIndex
 
 TUPLE_SIZE = 6
 english_stopwords = frozenset(stopwords.words("english"))
@@ -20,6 +19,7 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
                     "meanwhile", "accordingly", "likewise", "similarly", "notwithstanding", "nonetheless", "despite",
                     "whereas", "furthermore", "moreover", "nevertheless", "although", "notably", "notwithstanding",
                     "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence"]
+
 SIZE_OF_WIKI = 6348910
 DOCUMENT_NORMALIZATION_SIZE = 20000
 
@@ -72,28 +72,20 @@ class search_engine:
         self.caching_docs = dict()  # (key) (index_name, term) : (val) posting_list
         self.pr = dict()
         self.averageDl = dict()
-        self._load_indices()
         self.stemmer = PorterStemmer()
+        self.credentials = service_account.Credentials.from_service_account_file(
+            "/Users/tomsheinman/Desktop/final-project-415618-52467f8aee42.json")
+        self._load_indices()
 
     def _load_indices(self):
         """
         load all indices from buckets and keep them in main memory.
         """
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                "/Users/tomsheinman/Desktop/final-project-415618-52467f8aee42.json")
-            client = storage.Client(credentials=credentials)
-            bucket = client.get_bucket(BUCKET_NAME)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_BODY_MOST_COMMON_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_BODY_FOLDER}.pkl', STEMMING_BODY_FOLDER)
-
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_BODY_MOST_COMMON_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_TITLE_FOLDER}.pkl', STEMMING_TITLE_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_FOLDER}.pkl', BIGRAM_TITLE_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_TITLE_MOST_COMMON_FOLDER)
+            self.load_index(STEMMING_BODY_FOLDER)
+            self.load_index(STEMMING_TITLE_FOLDER)
+            self.load_index(BIGRAM_BODY_FOLDER)
+            self.load_index(BIGRAM_TITLE_FOLDER)
 
             # print("loading page views")
             # # loading page_view
@@ -101,6 +93,8 @@ class search_engine:
 
             # page ranks to dict
             print("loading page rank")
+            client = storage.Client(credentials=self.credentials)
+            bucket = client.get_bucket(BUCKET_NAME)
             decompressed_file = gzip.decompress(bucket.get_blob("pagerank.csv.gz").download_as_string())
             csv_reader = csv.reader(io.StringIO(decompressed_file.decode("utf-8")))
             self.pr = {int(page_rank_tup[0]): float(page_rank_tup[1]) for page_rank_tup in csv_reader}
@@ -109,8 +103,8 @@ class search_engine:
             print("error when calling load_all_indices_from_bucket")
             raise e
 
-    def load_index(self, bucket, path_to_folder, index_name):
-        pickle_index = pickle.loads(bucket.get_blob(path_to_folder).download_as_string())
+    def load_index(self, index_name):
+        pickle_index = InvertedIndex.read_index(INDEX_FOLDER, index_name, credentials=self.credentials, bucket_name=BUCKET_NAME)
         print(pickle_index.dl)
         self.inverted_indexes_dict[index_name] = pickle_index
         self.calculate_idf_from_index(pickle_index, index_name)
@@ -145,12 +139,15 @@ class search_engine:
         bigram_title_first_res = self.search_by_index(query_words, BIGRAM_TITLE_FOLDER)
 
         if tfidf_or_m25:
-            sorted_body, sorted_title = self.tfidf_stem_bigram_dl_find_candidates(bigram_body_first_res, bigram_title_first_res)
+            sorted_body, sorted_title = self.tfidf_stem_bigram_dl_find_candidates(bigram_body_first_res,
+                                                                                  bigram_title_first_res)
         else:
-            sorted_body, sorted_title = self.bm25_stem_bigram_dl_find_candidates(bigram_body_first_res, bigram_title_first_res)
+            sorted_body, sorted_title = self.bm25_stem_bigram_dl_find_candidates(bigram_body_first_res,
+                                                                                 bigram_title_first_res)
 
         # page rank:
-        bigram_body_pr_docs, bigram_title_pr_docs = self.page_rank_title_and_body(bigram_body_first_res, bigram_title_first_res)
+        bigram_body_pr_docs, bigram_title_pr_docs = self.page_rank_title_and_body(bigram_body_first_res,
+                                                                                  bigram_title_first_res)
 
         return sorted_body, sorted_title, bigram_body_pr_docs, bigram_title_pr_docs
 
@@ -206,7 +203,8 @@ class search_engine:
 
         query_words = self.fit_query(query, True)
 
-        body_rel_docs_sorted, title_rel_docs_sorted, body_pr_docs, title_pr_docs = self.stem_bigram_dl_find_candidates(query_words, True)
+        body_rel_docs_sorted, title_rel_docs_sorted, body_pr_docs, title_pr_docs = self.stem_bigram_dl_find_candidates(
+            query_words, True)
 
         return merge_ranking([body_rel_docs_sorted, title_rel_docs_sorted], [0.3, 0.7])
 

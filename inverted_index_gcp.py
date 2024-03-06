@@ -10,8 +10,8 @@ from contextlib import closing
 PROJECT_ID = 'final-project-415618'
 
 
-def get_bucket(bucket_name):
-    return storage.Client(PROJECT_ID).bucket(bucket_name)
+def get_bucket(bucket_name, credentials=None):
+    return storage.Client(PROJECT_ID, credentials=credentials).bucket(bucket_name)
 
 
 def _open(path, mode, bucket=None):
@@ -202,8 +202,8 @@ class InvertedIndex:
         return bucket_id
 
     @staticmethod
-    def read_index(base_dir, name, bucket_name=None):
+    def read_index(base_dir, name, credentials=None, bucket_name=None):
         path = str(Path(base_dir) / f'{name}.pkl')
-        bucket = None if bucket_name is None else get_bucket(bucket_name)
+        bucket = None if bucket_name is None else get_bucket(bucket_name, credentials)
         with _open(path, 'rb', bucket) as f:
             return pickle.load(f)
