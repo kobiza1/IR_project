@@ -168,9 +168,11 @@ class InvertedIndex:
 
     def read_a_posting_list(self, base_dir, w, bucket_name=None):
         posting_list = []
-
+        print(w)
         if w not in self.posting_locs:
             return posting_list
+
+        print(f'posting locs for {w}, {self.posting_locs[w]}')
 
         with closing(MultiFileReader(base_dir, bucket_name)) as reader:
             locs = self.posting_locs[w]

@@ -10,6 +10,7 @@ from google.cloud import storage
 from collections import Counter, defaultdict
 from nltk.corpus import stopwords
 from google.oauth2 import service_account
+from inverted_index_gcp import InvertedIndex
 
 
 TUPLE_SIZE = 6
@@ -20,6 +21,7 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
                     "meanwhile", "accordingly", "likewise", "similarly", "notwithstanding", "nonetheless", "despite",
                     "whereas", "furthermore", "moreover", "nevertheless", "although", "notably", "notwithstanding",
                     "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence"]
+
 SIZE_OF_WIKI = 6348910
 DOCUMENT_NORMALIZATION_SIZE = 20000
 
@@ -43,7 +45,6 @@ def calculate_bm25(idf, tf, dl, ave_dl, k=1.5, b=0.75):
 
 
 def calc_average_dl(index):
-    print(index.dl)
     total_sum = sum(index.dl.values())
     # Calculate the average
     return total_sum / len(index.dl)
@@ -56,11 +57,13 @@ def merge_ranking(lst_of_ranked_docs, weights, limit=100):
     for ranked_docs, weight in zip(lst_of_ranked_docs, weights):
         for doc_id, score in ranked_docs.items():
             merged_ranking[doc_id] += weight * score
+    print("hi from merge")
 
     # Sort the merged ranking by score
     sorted_merged_ranking = sorted(merged_ranking.items(), key=lambda x: x[1], reverse=True)
     if len(sorted_merged_ranking) > limit:
         sorted_merged_ranking = sorted_merged_ranking[:limit]
+    print(sorted_merged_ranking)
     return sorted_merged_ranking
 
 
@@ -81,37 +84,40 @@ class search_engine:
         """
         try:
             credentials = service_account.Credentials.from_service_account_file(
-                "/Users/tomsheinman/Desktop/final-project-415618-52467f8aee42.json")
+                r"C:\Users\kobiz\Desktop\הנדסת מערכות מידע\שנה ג\סימסטר א\אחזור מידע\עבודות\project\final-project-415618-4fb20d08c58e.json")
             client = storage.Client(credentials=credentials)
             bucket = client.get_bucket(BUCKET_NAME)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_BODY_MOST_COMMON_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_BODY_FOLDER}.pkl', STEMMING_BODY_FOLDER)
-
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_BODY_MOST_COMMON_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_TITLE_FOLDER}.pkl', STEMMING_TITLE_FOLDER)
+            # self.load_index(bucket, BIGRAM_BODY_MOST_COMMON_FOLDER, INDEX_FOLDER)
+            # self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_BODY_FOLDER}.pkl', STEMMING_BODY_FOLDER)
+            #
+            # self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_MOST_COMMON_FOLDER}.pkl',
+            #                 BIGRAM_BODY_MOST_COMMON_FOLDER)
+            # self.load_index(bucket, f'{INDEX_FOLDER}/{STEMMING_TITLE_FOLDER}.pkl', STEMMING_TITLE_FOLDER)
             self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_FOLDER}.pkl', BIGRAM_TITLE_FOLDER)
-            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_MOST_COMMON_FOLDER}.pkl',
-                            BIGRAM_TITLE_MOST_COMMON_FOLDER)
+            self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_BODY_FOLDER}.pkl', BIGRAM_BODY_FOLDER)
+            # self.load_index(bucket, f'{INDEX_FOLDER}/{BIGRAM_TITLE_MOST_COMMON_FOLDER}.pkl',
+            #                 BIGRAM_TITLE_MOST_COMMON_FOLDER)
 
             # print("loading page views")
             # # loading page_view
             # self.pv = pickle.loads(bucket.get_blob("wid2pv.pkl").download_as_string())
 
             # page ranks to dict
-            print("loading page rank")
-            decompressed_file = gzip.decompress(bucket.get_blob("pagerank.csv.gz").download_as_string())
-            csv_reader = csv.reader(io.StringIO(decompressed_file.decode("utf-8")))
-            self.pr = {int(page_rank_tup[0]): float(page_rank_tup[1]) for page_rank_tup in csv_reader}
+            # print("loading page rank")
+            # decompressed_file = gzip.decompress(bucket.get_blob("pagerank.csv.gz").download_as_string())
+            # csv_reader = csv.reader(io.StringIO(decompressed_file.decode("utf-8")))
+            # self.pr = {int(page_rank_tup[0]): float(page_rank_tup[1]) for page_rank_tup in csv_reader}
 
         except Exception as e:
             print("error when calling load_all_indices_from_bucket")
             raise e
 
     def load_index(self, bucket, path_to_folder, index_name):
-        pickle_index = pickle.loads(bucket.get_blob(path_to_folder).download_as_string())
-        print(pickle_index.dl)
+        # pickle_index = InvertedIndex.read_index(index_name, path_to_folder,  BUCKET_NAME)
+        pickle_index = pickle.loads(bucket.get_blob(path_to_folder).download_as_bytes())
+        # print(pickle_index.dl)
+        # print(pickle_index.term_total)
+        print(list(pickle_index.posting_locs.items())[:50])
         self.inverted_indexes_dict[index_name] = pickle_index
         self.calculate_idf_from_index(pickle_index, index_name)
         self.averageDl[index_name] = calc_average_dl(pickle_index)
@@ -150,7 +156,7 @@ class search_engine:
             sorted_body, sorted_title = self.bm25_stem_bigram_dl_find_candidates(bigram_body_first_res, bigram_title_first_res)
 
         # page rank:
-        bigram_body_pr_docs, bigram_title_pr_docs = self.page_rank_title_and_body(bigram_body_first_res, bigram_title_first_res)
+        bigram_body_pr_docs, bigram_title_pr_docs = [], []  #self.page_rank_title_and_body(bigram_body_first_res, bigram_title_first_res)
 
         return sorted_body, sorted_title, bigram_body_pr_docs, bigram_title_pr_docs
 
@@ -208,7 +214,8 @@ class search_engine:
 
         body_rel_docs_sorted, title_rel_docs_sorted, body_pr_docs, title_pr_docs = self.stem_bigram_dl_find_candidates(query_words, True)
 
-        return merge_ranking([body_rel_docs_sorted, title_rel_docs_sorted], [0.3, 0.7])
+        # return merge_ranking([body_rel_docs_sorted, title_rel_docs_sorted], [0.3, 0.7])
+        return (body_rel_docs_sorted+title_rel_docs_sorted)[0:50]
 
     def calculate_idf_from_index(self, index, index_name):
         """
@@ -236,13 +243,12 @@ class search_engine:
 
         return pr_docs
 
-    def calc_rank(self, tf, idf, tfidf_or_bm25, index_name, doc_id):
-
+    def calc_rank_doc_len_norm(self, tf, idf, tfidf_or_bm25, index_name, dl):
+        tf = tf/dl
         if tfidf_or_bm25:
             rank = tf * idf
         else:
             ave_dl = self.averageDl[index_name]
-            dl = self.get_doc_len(doc_id, index_name)
             rank = calculate_bm25(idf, tf, dl, ave_dl)
         return rank
 
@@ -258,7 +264,7 @@ class search_engine:
             dl = self.get_doc_len(doc_id, index_name)
             for term, tf in tups:
                 idf = idf_dic[term]
-                rank = self.calc_rank(tf, idf, tfidf_or_bm25, index_name, doc_id)
+                rank = self.calc_rank_doc_len_norm(tf, idf, tfidf_or_bm25, index_name, dl)
                 if doc_id in ranked_docs:
                     ranked_docs[doc_id] += rank / dl
                 else:
