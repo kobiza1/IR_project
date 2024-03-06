@@ -35,7 +35,6 @@ def search():
         return jsonify(res)
     # BEGIN SOLUTION
     result_list = se.search(query)
-    print(result_list)
     res = list(map(lambda x: x[0], result_list))
     # END SOLUTION
     return jsonify(res)
