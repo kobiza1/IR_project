@@ -1,17 +1,19 @@
+import os
 from collections import Counter
 import itertools
-
 from pathlib import Path
 import pickle
 from google.cloud import storage
 from collections import defaultdict
 from contextlib import closing
-
 from google.oauth2 import service_account
 
+
 PROJECT_ID = 'final-project-415618'
-credentials = service_account.Credentials.from_service_account_file(
-    r"C:\Users\kobiz\Downloads\final-project-415618-dc85bc2e0c5b.json")
+
+current_directory = os.getcwd()
+json_cred_file_path = os.path.join(current_directory, f'{PROJECT_ID}-52467f8aee42.json')
+credentials = service_account.Credentials.from_service_account_file(json_cred_file_path)
 
 
 def get_bucket(bucket_name):

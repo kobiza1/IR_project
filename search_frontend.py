@@ -6,6 +6,8 @@ class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
+
+print("starting")
 se = search_engine()
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
@@ -31,12 +33,8 @@ def search():
     """
     res = []
     query = request.args.get('query', '')
-    if len(query) == 0:
-        return jsonify(res)
-    # BEGIN SOLUTION
-    result_list = se.search(query)
-    res = list(map(lambda x: x[0], result_list))
-    # END SOLUTION
+    if len(query) != 0:
+        res = se.search(query)
     return jsonify(res)
 
 

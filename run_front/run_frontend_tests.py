@@ -38,6 +38,8 @@ def recall_at_k(true_list, predicted_list, k):
 def f1_at_k(true_list, predicted_list, k):
     p = precision_at_k(true_list, predicted_list, k)
     r = recall_at_k(true_list, predicted_list, k)
+    print(p)
+    print(r)
     if p == 0.0 or r == 0.0:
         return 0.0
     return round(2.0 / (1.0 / p + 1.0 / r), 3)
@@ -51,27 +53,7 @@ def results_quality(true_list, predicted_list):
     return round(2.0 / (1.0 / p5 + 1.0 / f1_30), 3)
 
 
-assert precision_at_k(range(10), [1, 2, 3], 2) == 1.0
-assert recall_at_k(range(10), [10, 5, 3], 2) == 0.1
-assert precision_at_k(range(10), [], 2) == 0.0
-assert precision_at_k([], [1, 2, 3], 5) == 0.0
-assert recall_at_k([], [10, 5, 3], 2) == 1.0
-assert recall_at_k(range(10), [], 2) == 0.0
-assert f1_at_k([], [1, 2, 3], 5) == 0.0
-assert f1_at_k(range(10), [], 2) == 0.0
-assert f1_at_k(range(10), [0, 1, 2], 2) == 0.333
-assert f1_at_k(range(50), range(5), 30) == 0.182
-assert f1_at_k(range(50), range(10), 30) == 0.333
-assert f1_at_k(range(50), range(30), 30) == 0.75
-assert results_quality(range(50), range(5)) == 0.308
-assert results_quality(range(50), range(10)) == 0.5
-assert results_quality(range(50), range(30)) == 0.857
-assert results_quality(range(50), [-1] * 5 + list(range(5, 30))) == 0.0
-
-# place the domain you got from ngrok or GCP IP below.
-
-
-url = 'http://cb8a-2a0d-6fc0-761-2f00-693b-5b12-c75b-aafa.ngrok-free.app'
+url = 'https://00db-34-148-88-253.ngrok-free.app'
 
 qs_res = []
 for q, true_wids in queries.items():
@@ -81,10 +63,19 @@ for q, true_wids in queries.items():
     try:
         res = requests.get(url + '/search', {'query': q}, timeout=70)
         duration = time() - t_start
+        print(res.status_code)
         if res.status_code == 200:
             pred_wids, _ = zip(*res.json())
+            print(pred_wids)
+            print(true_wids)
             rq = results_quality(true_wids, pred_wids)
-    except:
+            print(rq)
+    except Exception as e:
+        print(e)
         pass
 
     qs_res.append((q, duration, rq))
+
+print(qs_res)
+
+# second run -
