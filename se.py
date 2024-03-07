@@ -38,7 +38,7 @@ params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, '
 
 # WEIGHTS_PER_METHOD = {'pr': 0.4, 'tfidf-cosin': 0.3, 'bm25-cosin': 0.3}
 # our weights = [body_bm25_bi, title_bm25_bi, body_bm25_stem, title_bm25_stem, pr, pv]
-our_weights = [6, 3, 8, 2, 6, 4]
+our_weights = [7, 1, 3, 7, 8, 7]
 
 ALL_STOP_WORDS = english_stopwords.union(corpus_stopwords)
 RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
@@ -143,8 +143,9 @@ class search_engine:
             min_score = min(scores)
             max_score = max(scores)
 
-            if(max_score == 0):
+            if max_score == 0:
                 return [0 for _ in range(len(scores))]
+
             if min_score == max_score:
                 normalized_scores = [score / max_score for score in scores]
             else:
@@ -288,8 +289,12 @@ class search_engine:
 
         if len(query_words) <= 1:
             our_weights[1] = 9
+            our_weights[0] = 6
+            our_weights[2] = 2
         else:
-            our_weights[1] = 3
+            our_weights[1] = 1
+            our_weights[0] = 7
+            our_weights[2] = 3
 
 
         body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram = (self.find_candidates_by_index
@@ -325,7 +330,7 @@ class search_engine:
             for doc_id, score in d.items():
                 all_docs.update({doc_id: score})
 
-        sorted_docs_dict = self.sort_ranked_docs(all_docs, limit=200)
+        sorted_docs_dict = self.sort_ranked_docs(all_docs, limit=100)
 
         pr_all_rel_docs = self.pr_docs_from_relevant_docs(sorted_docs_dict)
         pv_all_rel_docs = self.pv_docs_from_relevant_docs(sorted_docs_dict)

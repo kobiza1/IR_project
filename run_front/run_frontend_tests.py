@@ -53,7 +53,7 @@ def results_quality(true_list, predicted_list):
     return round(2.0 / (1.0 / p5 + 1.0 / f1_30), 3)
 
 
-url = 'https://00db-34-148-88-253.ngrok-free.app'
+url = 'http://34.42.247.187:8080'
 
 qs_res = []
 for q, true_wids in queries.items():
@@ -63,7 +63,7 @@ for q, true_wids in queries.items():
     try:
         res = requests.get(url + '/search', {'query': q}, timeout=70)
         duration = time() - t_start
-        print(res.status_code)
+        print(q)
         if res.status_code == 200:
             pred_wids, _ = zip(*res.json())
             print(pred_wids)
