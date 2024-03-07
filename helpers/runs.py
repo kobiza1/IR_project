@@ -1,3 +1,5 @@
+from matplotlib import pyplot as plt
+
 first_run = [('genetics', 2.518773078918457, 0.092), ('Who is considered the "Father of the United States"?', 70, 0), ('economic', 13.240584135055542, 0.089), ('When was the United Nations founded?', 66.14292097091675, 0.092), ('video gaming', 20.76684594154358, 0.0), ('3D printing technology', 10.478022813796997, 0.0), ('Who is the author of "1984"?', 20.62777590751648, 0.0), ('bioinformatics', 1.682426929473877, 0.22), ('Who is known for proposing the heliocentric model of the solar system?', 49.144999742507935, 0.0), ('Describe the process of water erosion.', 33.59993600845337, 0.046), ('When was the Berlin Wall constructed?', 18.7369647026062, 0.0), ('What is the meaning of the term "Habeas Corpus"?', 23.34450912475586, 0.09), ('telecommunications', 2.4513027667999268, 0.106), ('internet', 3.6825432777404785, 0.098), ('What are the characteristics of a chemical element?', 12.70386290550232, 0.0), ('Describe the structure of a plant cell.', 30.520446300506592, 0.0), ('Who painted "Starry Night"?', 14.096388816833496, 0.054), ('computer', 5.975239992141724, 0.083), ("What is the structure of the Earth's layers?", 12.617396116256714, 0.0), ('When did World War II end?', 55.920636892318726, 0.08), ('When was the Gutenberg printing press invented?', 15.032341003417969, 0.0), ('medicine', 3.3362009525299072, 0.094), ('Describe the water cycle.', 23.112583875656128, 0.0), ('artificial intelligence', 6.162524938583374, 0.223), ('physics', 5.794700860977173, 0.083), ('nanotechnology', 1.6450960636138916, 0.35), ('When did the Black Death pandemic occur?', 40.19928193092346, 0.083), ('neuroscience', 1.8876228332519531, 0.092), ('snowboard', 1.8164541721343994, 0.215), ('Who is the founder of modern psychology?', 19.369436979293823, 0.0)]
 
 # our_weights = [6, 8, 8, 5, 7.5, 6.5] second round
@@ -15,9 +17,33 @@ five_run = [('genetics', 1.1960742473602295, 0.0), ('Who is considered the "Fath
 # our_weights = [0, 0, 0, 0, 0, 8, 3, 4, 3, 3]
 six_run = [('genetics', 0.8698318004608154, 0.132), ('Who is considered the "Father of the United States"?', 20.510140895843506, 0.0), ('economic', 1.959218978881836, 0.044), ('When was the United Nations founded?', 14.252920389175415, 0.0), ('video gaming', 3.061460256576538, 0.0), ('3D printing technology', 2.8101134300231934, 0.095), ('Who is the author of "1984"?', 4.34236216545105, 0.0), ('bioinformatics', 0.9690885543823242, 0.383), ('Who is known for proposing the heliocentric model of the solar system?', 15.860202550888062, 0.0), ('Describe the process of water erosion.', 5.400469541549683, 0.0), ('When was the Berlin Wall constructed?', 3.4408609867095947, 0.0), ('What is the meaning of the term "Habeas Corpus"?', 4.1610212326049805, 0.0), ('telecommunications', 0.7949986457824707, 0.0), ('internet', 2.174541711807251, 0.0), ('What are the characteristics of a chemical element?', 2.357560157775879, 0.0), ('Describe the structure of a plant cell.', 4.650835990905762, 0.0), ('Who painted "Starry Night"?', 3.693203926086426, 0.177), ('computer', 1.5665805339813232, 0.0), ("What is the structure of the Earth's layers?", 3.6009721755981445, 0.0), ('When did World War II end?', 16.754169464111328, 0.0), ('When was the Gutenberg printing press invented?', 4.135575532913208, 0.0), ('medicine', 1.2488470077514648, 0.0), ('Describe the water cycle.', 4.0268166065216064, 0.0), ('artificial intelligence', 1.7635407447814941, 0.0), ('physics', 2.007932186126709, 0.0), ('nanotechnology', 0.6683194637298584, 0.509), ('When did the Black Death pandemic occur?', 8.180373430252075, 0.0), ('neuroscience', 0.7346370220184326, 0.363), ('snowboard', 0.6358785629272461, 0.209), ('Who is the founder of modern psychology?', 5.257742404937744, 0.0)]
 
+# our_weights = [0,0,0,0,0,8,3,4,1,1] change title  (no binary) to 8 when only 1 word in title and reduce body to 5
+seven_run = [('genetics', 0.7524139881134033, 0.132), ('Who is considered the "Father of the United States"?', 25.124649047851562, 0.0), ('economic', 2.2618319988250732, 0.044), ('When was the United Nations founded?', 19.11579990386963, 0.0), ('video gaming', 3.988826036453247, 0.0), ('3D printing technology', 3.5962460041046143, 0.095), ('Who is the author of "1984"?', 6.887830972671509, 0.0), ('bioinformatics', 0.6140673160552979, 0.383), ('Who is known for proposing the heliocentric model of the solar system?', 20.22899079322815, 0.0), ('Describe the process of water erosion.', 7.442148685455322, 0.0), ('When was the Berlin Wall constructed?', 5.645848989486694, 0.0), ('What is the meaning of the term "Habeas Corpus"?', 5.395991802215576, 0.0), ('telecommunications', 0.8076941967010498, 0.0), ('internet', 1.6349990367889404, 0.117), ('What are the characteristics of a chemical element?', 2.9746530055999756, 0.044), ('Describe the structure of a plant cell.', 5.860370874404907, 0.0), ('Who painted "Starry Night"?', 5.509042024612427, 0.177), ('computer', 1.8777573108673096, 0.0), ("What is the structure of the Earth's layers?", 3.398837089538574, 0.0), ('When did World War II end?', 23.196917057037354, 0.0), ('When was the Gutenberg printing press invented?', 5.371915102005005, 0.0), ('medicine', 2.4030990600585938, 0.084), ('Describe the water cycle.', 5.30096697807312, 0.0), ('artificial intelligence', 1.8742649555206299, 0.325), ('physics', 1.1154489517211914, 0.0), ('nanotechnology', 0.6634957790374756, 0.526), ('When did the Black Death pandemic occur?', 12.275413990020752, 0.0), ('neuroscience', 0.6525509357452393, 0.309), ('snowboard', 0.6604928970336914, 0.282), ('Who is the founder of modern psychology?', 6.035895109176636, 0.0)]
 
-runs = [first_run, sec_run, third_run, four_run, five_run, six_run]
+
+runs = [first_run, sec_run, third_run, four_run, five_run, six_run, seven_run]
+avg_results = []
+avg_times = []
 for run in runs:
     avg_res = sum(map(lambda x: x[2], run)) / len(run)
     avg_time = sum(map(lambda x: x[1], run)) / len(run)
-    print(f'avg_res: {avg_res}, avg_time: {avg_time}')
+    avg_results.append(avg_res)
+    avg_times.append(avg_time)
+
+
+plt.figure(figsize=(8, 5))
+plt.plot(range(1, len(avg_results) + 1), avg_results, marker='o', color='blue')
+plt.title('Average Results per Run')
+plt.xlabel('Run')
+plt.ylabel('Average Result')
+plt.grid(True)
+plt.show()
+
+# Plotting average times
+plt.figure(figsize=(8, 5))
+plt.plot(range(1, len(avg_times) + 1), avg_times, marker='x', color='red')
+plt.title('Average Times per Run')
+plt.xlabel('Run')
+plt.ylabel('Average Time')
+plt.grid(True)
+plt.show()

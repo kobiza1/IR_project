@@ -1,7 +1,6 @@
 import io
 import gzip
 import csv
-import os
 import pickle
 import numpy as np
 import math
@@ -10,14 +9,9 @@ from nltk.util import ngrams
 from google.cloud import storage
 from collections import Counter
 from nltk.corpus import stopwords
-from google.oauth2 import service_account
 from inverted_index_gcp import InvertedIndex
 
-
-# Get the current working directory
-current_directory = os.getcwd()
-# Construct the full file path
-json_cred_file_path = os.path.join(current_directory, 'final-project-415618-52467f8aee42.json')
+PROJECT_ID = 'final-project-415618'
 
 TUPLE_SIZE = 6
 english_stopwords = frozenset(stopwords.words("english"))
@@ -30,16 +24,11 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
 
 SIZE_OF_WIKI = 6348910
 
-params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, 'bm25_body_weight': 8.798177098065569,
-          'bm25_title_weight': 0.49852365380857405, 'bm25_body_bi_weight': 0.3017628167759724,
-          'bm25_title_bi_weight': 7.194777117032163,
-          'body_cosine_score': 3.3006609064263843, 'title_cosine_score': 4.252156540716102,
-          'pr_weight': 2.0879280338073336, 'pv_weight': 5.483394450683551}
-
-# WEIGHTS_PER_METHOD = {'pr': 0.4, 'tfidf-cosin': 0.3, 'bm25-cosin': 0.3}
-# our weights = [body_bm25_bi, title_bm25_bi, body_bm25_stem, title_bm25_stem,
-# title_binary_stem, body_bm25_no_stem, title_bm25_no_stem, title_binary_no_stem pr, pv]
-our_weights = [0, 0, 0, 0, 0, 8, 3, 4, 3, 3]
+# params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, 'bm25_body_weight': 8.798177098065569,
+#           'bm25_title_weight': 0.49852365380857405, 'bm25_body_bi_weight': 0.3017628167759724,
+#           'bm25_title_bi_weight': 7.194777117032163,
+#           'body_cosine_score': 3.3006609064263843, 'title_cosine_score': 4.252156540716102,
+#           'pr_weight': 2.0879280338073336, 'pv_weight': 5.483394450683551}
 
 ALL_STOP_WORDS = english_stopwords.union(corpus_stopwords)
 RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
@@ -77,9 +66,7 @@ class search_engine:
         load all indices from buckets and keep them in main memory.
         """
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                json_cred_file_path)
-            client = storage.Client(credentials=credentials)
+            client = storage.Client(project=PROJECT_ID)
             bucket = client.get_bucket(BUCKET_NAME)
 
             print("loading indexes")
@@ -121,10 +108,10 @@ class search_engine:
         bigram_title_first_res = self.search_by_index(query_words, index_name_title)
 
         body_ranked_docs, title_ranked_docs, title_binary_docs = self.rank_candidates_by_index(bigram_body_first_res,
-                                                                                bigram_title_first_res, index_name_body,
-                                                                                index_name_title, tfidf_or_bm25)
-
-
+                                                                                               bigram_title_first_res,
+                                                                                               index_name_body,
+                                                                                               index_name_title,
+                                                                                               tfidf_or_bm25)
 
         # pr_body_tfidf_bigram, pr_title_tfidf_bigram = self.page_rank_title_and_body(body_ranked_docs, title_ranked_docs)
 
@@ -265,7 +252,6 @@ class search_engine:
             return sorted_ranked_docs
         return sorted_ranked_docs[:limit]
 
-
     @staticmethod
     def rank_titles_by_binary(rel_docs):
 
@@ -291,6 +277,24 @@ class search_engine:
 
             return normalized_scores
 
+    def get_non_empty_scores(self, all_scores, all_weights):
+        filtered_scores = []
+        filtered_weights = []
+
+        for key, scores_dict in all_scores.items():
+            if scores_dict and len(scores_dict) > 0:
+                scores_values = list(scores_dict.values())
+                # Normalize the values
+                normalized_values = self.normalize_scores(scores_values)
+
+                # Update the dictionary with the normalized values
+                normalized_scores_dict = {key: value for key, value in zip(scores_dict.keys(), normalized_values)}
+
+                filtered_scores.append(normalized_scores_dict)
+                filtered_weights.append(all_weights[key])
+
+        return filtered_scores, filtered_weights
+
     def search(self, query):
         # body_rel_docs_tfidf_bigram, title_rel_docs_tfidf_bigram = \
         # (self.find_candidates_by_index(query_words, True, BIGRAM_BODY_FOLDER, BIGRAM_TITLE_FOLDER))
@@ -298,17 +302,21 @@ class search_engine:
         # (self.find_candidates_by_index(query_words, True, STEMMING_BODY_FOLDER, STEMMING_TITLE_FOLDER))
 
         # True = tfidf False = bm25
+
+        weights = {'body_bm25_bi': 0, 'title_bm25_bi': 0, 'body_bm25_stem': 0,
+                   'title_bm25_stem': 0, 'title_binary_stem': 0, 'body_bm25_no_stem': 8,
+                   'title_bm25_no_stem': 3, 'title_binary_no_stem': 4, 'pr': 3, 'pv': 3}
+
         query_words = self.fit_query(query, True, True)
 
         if len(query_words) <= 1:
-            our_weights[1] = 9
-            our_weights[0] = 6
-            our_weights[2] = 2
+            weights['title_bm25_bi'] = 9
+            weights['body_bm25_bi'] = 6
+            weights['body_bm25_stem'] = 2
         else:
-            our_weights[1] = 1
-            our_weights[0] = 7
-            our_weights[2] = 3
-
+            weights['title_bm25_bi'] = 1
+            weights['body_bm25_bi'] = 7
+            weights['body_bm25_stem'] = 3
 
         # body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, title_binary_docs_bigram = (self.find_candidates_by_index
         #                                                          (query_words, False,
@@ -322,58 +330,42 @@ class search_engine:
 
         query_words_no_stem = self.fit_query(query, False, False)
 
-        body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem = (self.find_candidates_by_index
-                                                                                     (query_words_no_stem, False,
-                                                                                      NO_STEM_BODY_FOLDER,
-                                                                                      NO_STEM_TITLE_FOLDER))
-        weights = our_weights
-        filtered_scores = []
-        filtered_weights = []
-        all_scores = [body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem]
+        body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem = (
+            self.find_candidates_by_index
+            (query_words_no_stem, False,
+             NO_STEM_BODY_FOLDER,
+             NO_STEM_TITLE_FOLDER))
+
+        all_scores = {'body_bm25_no_stem': body_rel_docs_bm25_no_stem,
+                      'title_bm25_no_stem': title_rel_docs_bm25_no_stem,
+                      'title_binary_no_stem': title_binary_docs_stem_no_stem}
+
         # all_scores = [body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, body_rel_docs_bm25_stem,
         #               title_rel_docs_bm25_stem, title_binary_docs_stem, body_rel_docs_bm25_no_stem,
         #               title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem]
 
-        for scores_dict in all_scores:
-            print(len(scores_dict))
+        filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
 
-        for index, scores_dict in enumerate(all_scores):
-            if scores_dict and len(scores_dict) > 0:
-                scores_values = list(scores_dict.values())
-                # Normalize the values
-                normalized_values = self.normalize_scores(scores_values)
-
-                # Update the dictionary with the normalized values
-                normalized_scores_dict = {key: value for key, value in zip(scores_dict.keys(), normalized_values)}
-
-                filtered_scores.append(normalized_scores_dict)
-                filtered_weights.append(weights[index])
-
-        all_docs = Counter()
+        all_docs = set()
         for d in filtered_scores:
-            for doc_id, score in d.items():
-                all_docs.update({doc_id: score})
+            for doc_id, _ in d.items():
+                all_docs.add(doc_id)
 
-        sorted_docs_dict = self.sort_ranked_docs(all_docs, limit=100)
+        all_docs_list = list(all_docs)
+        pr_rel_docs = self.pr_docs_from_relevant_docs(all_docs_list)
+        pv_rel_docs = self.pv_docs_from_relevant_docs(all_docs_list)
+        pr_pv_map = {"pr": pr_rel_docs, "pv": pv_rel_docs}
 
-        pr_all_rel_docs = self.pr_docs_from_relevant_docs(sorted_docs_dict)
-        pv_all_rel_docs = self.pv_docs_from_relevant_docs(sorted_docs_dict)
-        pr_pv_list = [pr_all_rel_docs, pv_all_rel_docs]
+        filtered_scores_pr_pv, filtered_weights_pr_pv = self.get_non_empty_scores(pr_pv_map, weights)
 
-        for index, scores_dict in enumerate(pr_pv_list):
+        final_scores = filtered_scores + filtered_scores_pr_pv
+        finals_weights = filtered_weights + filtered_weights_pr_pv
 
-            if scores_dict and len(scores_dict) > 0:
-                scores_values = list(scores_dict.values())
-                # Normalize the values
-                normalized_values = self.normalize_scores(scores_values)
+        print(len(final_scores))
+        print(len(finals_weights))
+        print(finals_weights)
 
-                # Update the dictionary with the normalized values
-                normalized_scores_dict = {key: value for key, value in zip(scores_dict.keys(), normalized_values)}
-
-                filtered_scores.append(normalized_scores_dict)
-                filtered_weights.append(weights[index])
-
-        rankings = self.merge_ranking(filtered_scores, filtered_weights)
+        rankings = self.merge_ranking(final_scores, finals_weights)
 
         # add titles
         res = list(map(lambda x: (str(x[0]), self.id_to_title.get(x[0], 'Unknown')), rankings))

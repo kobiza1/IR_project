@@ -38,8 +38,6 @@ def recall_at_k(true_list, predicted_list, k):
 def f1_at_k(true_list, predicted_list, k):
     p = precision_at_k(true_list, predicted_list, k)
     r = recall_at_k(true_list, predicted_list, k)
-    print(p)
-    print(r)
     if p == 0.0 or r == 0.0:
         return 0.0
     return round(2.0 / (1.0 / p + 1.0 / r), 3)
@@ -63,12 +61,12 @@ for q, true_wids in queries.items():
     try:
         res = requests.get(url + '/search', {'query': q}, timeout=70)
         duration = time() - t_start
-        print(q)
         if res.status_code == 200:
             pred_wids, _ = zip(*res.json())
+            rq = results_quality(true_wids, pred_wids)
+            print(q)
             print(pred_wids)
             print(true_wids)
-            rq = results_quality(true_wids, pred_wids)
             print(rq)
     except Exception as e:
         print(e)

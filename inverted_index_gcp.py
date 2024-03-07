@@ -8,16 +8,11 @@ from collections import defaultdict
 from contextlib import closing
 from google.oauth2 import service_account
 
-
 PROJECT_ID = 'final-project-415618'
-
-current_directory = os.getcwd()
-json_cred_file_path = os.path.join(current_directory, f'{PROJECT_ID}-52467f8aee42.json')
-credentials = service_account.Credentials.from_service_account_file(json_cred_file_path)
 
 
 def get_bucket(bucket_name):
-    return storage.Client(PROJECT_ID, credentials=credentials).bucket(bucket_name)
+    return storage.Client(PROJECT_ID).bucket(bucket_name)
 
 
 def _open(path, mode, bucket=None):
