@@ -53,7 +53,7 @@ def results_quality(true_list, predicted_list):
     return round(2.0 / (1.0 / p5 + 1.0 / f1_30), 3)
 
 
-url = 'http://34.42.247.187:8080'
+url = 'http://34.31.167.233:8080'
 
 qs_res = []
 for q, true_wids in queries.items():

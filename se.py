@@ -50,7 +50,11 @@ STEMMING_TITLE_FOLDER = 'inverted_title_with_stemming'
 BIGRAM_BODY_FOLDER = 'inverted_text_with_bigram'
 BIGRAM_TITLE_FOLDER = 'inverted_title_with_bigram'
 
+NO_STEM_BODY_FOLDER = 'inverted_text_no_stem'
+NO_STEM_TITLE_FOLDER = 'inverted_title_no_stem'
+
 INDEX_FOLDER = 'inverted_indices'
+
 DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
 PR_FILE = "pr_full_run/part-00000-d70a55fc-ebc4-4920-8b29-b57541c978c0-c000.csv.gz"
 PV_FILE = "wid2pv.pkl"
@@ -61,17 +65,15 @@ class search_engine:
     def __init__(self):
         self.inverted_indexes_dict = dict()
         self.term_idf_dict = dict()
-        self.caching_docs = dict()  # (key) (index_name, term) : (val) posting_list
         self.pr = dict()
         self.averageDl = dict()
         self.stemmer = PorterStemmer()
         self.id_to_title = dict()
-        print("init")
         self._load_indices()
 
     def _load_indices(self):
         """
-        load all indices from buckets and keep them in main memory.
+        load all indices from buckets and keep them in maina memory.
         """
         try:
             credentials = service_account.Credentials.from_service_account_file(
@@ -84,6 +86,8 @@ class search_engine:
             self.load_index(INDEX_FOLDER, STEMMING_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, BIGRAM_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, BIGRAM_BODY_FOLDER)
+            self.load_index(INDEX_FOLDER, NO_STEM_BODY_FOLDER)
+            self.load_index(INDEX_FOLDER, NO_STEM_TITLE_FOLDER)
 
             print("loading doc id 2 title index")
             self.id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
@@ -104,6 +108,7 @@ class search_engine:
     def load_index(self, path_to_folder, index_name):
 
         pickle_index = InvertedIndex.read_index(path_to_folder, index_name, BUCKET_NAME)
+
 
         self.inverted_indexes_dict[index_name] = pickle_index
         self.calculate_idf_from_index(pickle_index, index_name)
@@ -237,16 +242,12 @@ class search_engine:
         return tokens
 
     def search_by_index(self, query_words, index_name):
+
         index = self.inverted_indexes_dict[index_name]
         unique_words = np.unique(query_words)
         rel_docs = dict()
         for term in unique_words:
-            if (index_name, term) in self.caching_docs and (
-                    len(self.caching_docs) <= 100000):  # TODO: NEED LIMIT? IF YES HOW MUCH?
-                posting_list = self.caching_docs[(index_name, term)]
-            else:
-                posting_list = index.read_a_posting_list(term, BUCKET_NAME)
-                self.caching_docs[(index_name, term)] = posting_list
+            posting_list = index.read_a_posting_list(term, BUCKET_NAME)
             for doc_id, tf in posting_list:
                 rel_docs.setdefault(doc_id, []).append((term, tf))
         return rel_docs

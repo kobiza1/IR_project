@@ -7,8 +7,6 @@ class MyFlaskApp(Flask):
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
 
-print("starting")
-se = search_engine()
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
@@ -179,5 +177,6 @@ def get_pageview():
 
 
 if __name__ == '__main__':
+    se = search_engine()
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
     app.run(host='0.0.0.0', port=8080, debug=True)
