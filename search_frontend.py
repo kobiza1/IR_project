@@ -179,4 +179,5 @@ def get_pageview():
 if __name__ == '__main__':
     se = search_engine()
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+    # app.run(host='0.0.0.0', port=8080, debug=True)
