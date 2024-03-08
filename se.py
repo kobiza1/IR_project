@@ -82,13 +82,6 @@ class search_engine:
             self.load_index(INDEX_FOLDER, NO_STEM_BODY_FOLDER)
             self.load_index(INDEX_FOLDER, NO_STEM_TITLE_FOLDER)
 
-            if 'periods' in self.inverted_indexes_dict['periods']:
-                print(self.inverted_indexes_dict['periods'])
-            else:
-                print('periods not found')
-
-            if print(self.inverted_indexes_dict[])
-                print(self.inverted_indexes_dict['period'])
             print("loading doc id 2 title index")
             self.id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
             print("loading page views")
@@ -129,11 +122,11 @@ class search_engine:
         - title_binary_docs (dict): Dictionary containing binary documents for the title index.
         """
         # stem and bigram with doc len normalization:
-        rel_docs_body = self.find_relevant_docs(query_words, index_name_body)
-        rel_docs_title = self.find_relevant_docs(query_words, index_name_title)
+        bigram_body_first_res = self.find_relevant_docs(query_words, index_name_body)
+        bigram_title_first_res = self.find_relevant_docs(query_words, index_name_title)
 
-        body_ranked_docs, title_ranked_docs, title_binary_docs = self.rank_candidates_by_index(rel_docs_body,
-                                                                                               rel_docs_title,
+        body_ranked_docs, title_ranked_docs, title_binary_docs = self.rank_candidates_by_index(bigram_body_first_res,
+                                                                                               bigram_title_first_res,
                                                                                                index_name_body,
                                                                                                index_name_title,
                                                                                                tfidf_or_bm25)
@@ -185,7 +178,6 @@ class search_engine:
                 page_rank = self.pr[doc_id]
                 pr_docs[doc_id] = page_rank
             else:
-                print(f'{self.id_to_title[doc_id]} not found in pv')
                 pr_docs[doc_id] = 0
         return pr_docs
 
@@ -196,7 +188,6 @@ class search_engine:
                 page_rank = self.pv[doc_id]
                 pv_docs[doc_id] = page_rank
             else:
-                print(f'{self.id_to_title[doc_id]} not found in pv')
                 pv_docs[doc_id] = 0
         return pv_docs
 
@@ -213,7 +204,6 @@ class search_engine:
     def get_doc_len(self, doc_id, index_name):
         index = self.inverted_indexes_dict[index_name]
         if doc_id not in index.dl:
-            print(f"could not find {doc_id} length in {index_name}")
             return 1
         return index.dl[doc_id]
 
@@ -316,31 +306,45 @@ class search_engine:
 
     @staticmethod
     def normalize_scores(scores):
-        """
-        Normalize a list of scores using Z-score normalization.
-
-        Args:
-            scores (list of float): List of scores to be normalized.
-
-        Returns:
-            list of float: Normalized scores where each score has a mean of 0 and standard deviation of 1.
-        """
         if len(scores) > 0:
-            # Convert scores to NumPy array
-            scores_np = np.array(scores)
+            min_score = min(scores)
+            max_score = max(scores)
+            if min_score == max_score:
+                normalized_scores = [score / max_score for score in scores]
+            else:
+                normalized_scores = [(score - min_score) / (max_score - min_score) for score in scores]
 
-            # Calculate mean and standard deviation
-            mean_score = np.mean(scores_np)
-            std_deviation_score = np.std(scores_np)
+            return normalized_scores
 
-            # Check if standard deviation is zero to avoid division by zero
-            if std_deviation_score == 0:
-                return [0 for _ in range(len(scores))]
-
-            # Z-score normalization
-            normalized_scores = (scores_np - mean_score) / std_deviation_score
-
-            return normalized_scores.tolist()
+    # @staticmethod
+    # def normalize_scores(scores):
+    #     """
+    #     Normalize a list of scores using robust normalization (interquartile range).
+    #
+    #     Args:
+    #         scores (list of float): List of scores to be normalized.
+    #
+    #     Returns:
+    #         list of float: Normalized scores where each score has been robustly normalized.
+    #     """
+    #     if len(scores) > 0:
+    #         scores_np = np.array(scores)
+    #
+    #         # Calculate first quartile (Q1) and third quartile (Q3)
+    #         q1 = np.percentile(scores_np, 25)
+    #         q3 = np.percentile(scores_np, 75)
+    #
+    #         # Calculate interquartile range (IQR)
+    #         iqr = q3 - q1
+    #
+    #         # Check if interquartile range is zero to avoid division by zero
+    #         if iqr == 0:
+    #             return [0 for _ in range(len(scores))]
+    #
+    #         # Robust normalization
+    #         normalized_scores = (scores_np - q1) / iqr
+    #
+    #         return normalized_scores.tolist()
 
     def get_non_empty_scores(self, all_scores, all_weights):
         """
@@ -360,22 +364,16 @@ class search_engine:
 
         for key, scores_dict in all_scores.items():
             if scores_dict and len(scores_dict) > 0:
-                example = scores_dict[1590357]
-                print(f'example for score dict with key: {key} is {example}')
                 scores_values = list(scores_dict.values())
-                print(f'max score for key: {key} is: {max(scores_values)} and min is {min(scores_values)}')
                 # Normalize the values
                 normalized_values = self.normalize_scores(scores_values)
-                print(
-                    f'after normalization max score for key: {key} is: {max(normalized_values)} and min is {min(normalized_values)}')
                 # Update the dictionary with the normalized values
                 normalized_scores_dict = {k: v for k, v in zip(scores_dict.keys(), normalized_values)}
-                example = normalized_scores_dict[1590357]
-                print(f'example for score dict after normalize with key: {key} is {example}')
                 filtered_scores.append(normalized_scores_dict)
                 filtered_weights.append(all_weights[key])
 
         return filtered_scores, filtered_weights
+
 
     def search(self, query, weights):
         """
@@ -396,42 +394,39 @@ class search_engine:
         # True = tfidf False = bm25
 
         query_words = self.fit_query(query, True, True)
-        print(f'query_words with bigram: {query_words}')
 
-        body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, title_binary_docs_bigram = (self.find_candidates_by_index
-                                                                                           (query_words, False,
-                                                                                            BIGRAM_BODY_FOLDER,
-                                                                                            BIGRAM_TITLE_FOLDER))
-        print(f'number of docs bm25 bigram body: {len(body_rel_docs_bm25_bigram)}')
-        print(f'number of docs bm25 bigram title: {len(title_rel_docs_bm25_bigram)}')
-        print(f'number of docs binary bigram title: {len(title_binary_docs_bigram)}')
+
+        # body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, title_binary_docs_bigram = (self.find_candidates_by_index
+        #                                                                                    (query_words, False,
+        #                                                                                     BIGRAM_BODY_FOLDER,
+        #                                                                                     BIGRAM_TITLE_FOLDER))
+        # print(f'number of docs bm25 bigram body: {len(body_rel_docs_bm25_bigram)}')
+        # print(f'number of docs bm25 bigram title: {len(title_rel_docs_bm25_bigram)}')
+        # print(f'number of docs binary bigram title: {len(title_binary_docs_bigram)}')
 
         query_words_no_bigram = self.fit_query(query, False, True)
-        print(f'query_words no bigram: {query_words_no_bigram}')
+
         body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, title_binary_docs_stem = (self.find_candidates_by_index
                                                                                      (query_words_no_bigram, False,
                                                                                       STEMMING_BODY_FOLDER,
                                                                                       STEMMING_TITLE_FOLDER))
-        print(f'number of docs bm25 stem body: {len(body_rel_docs_bm25_stem)}')
-        print(f'number of docs bm25 stem title: {len(title_rel_docs_bm25_stem)}')
-        print(f'number of docs binary stem title: {len(title_binary_docs_stem)}')
 
         query_words_no_stem_no_bigram = self.fit_query(query, False, False)
-        print(f'query_words no bigram no stem: {query_words}')
+
         body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem = (
             self.find_candidates_by_index
             (query_words_no_stem_no_bigram, False,
              NO_STEM_BODY_FOLDER,
              NO_STEM_TITLE_FOLDER))
-        print(f'number of docs bm25 no stem body: {len(body_rel_docs_bm25_no_stem)}')
-        print(f'number of docs bm25 no stem title: {len(title_rel_docs_bm25_no_stem)}')
-        print(f'number of docs binary no stem title: {len(title_binary_docs_stem_no_stem)}')
 
-        all_scores = {'body_bm25_bi': body_rel_docs_bm25_bigram, 'title_bm25_bi': title_rel_docs_bm25_bigram,
+
+        all_scores = {
+            # 'body_bm25_bi': body_rel_docs_bm25_bigram, 'title_bm25_bi': title_rel_docs_bm25_bigram,
                       'body_bm25_stem': body_rel_docs_bm25_stem, 'title_bm25_stem': title_rel_docs_bm25_stem,
                       'title_binary_stem': title_binary_docs_stem, 'body_bm25_no_stem': body_rel_docs_bm25_no_stem,
-                      'title_bm25_no_stem': title_rel_docs_bm25_no_stem,
+                      # 'title_bm25_no_stem': title_rel_docs_bm25_no_stem,
                       'title_binary_no_stem': title_binary_docs_stem_no_stem}
+
 
         filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
 
@@ -441,7 +436,6 @@ class search_engine:
                 all_docs.add(doc_id)
 
         all_docs_list = list(all_docs)
-        print(f'total number of relevant docs: {len(all_docs)}')
 
         pr_rel_docs = self.pr_docs_from_relevant_docs(all_docs_list)
         pv_rel_docs = self.pv_docs_from_relevant_docs(all_docs_list)
@@ -450,14 +444,18 @@ class search_engine:
 
         filtered_scores_pr_pv, filtered_weights_pr_pv = self.get_non_empty_scores(pr_pv_map, weights)
 
+        pv_dict = {'pv': 0}
+        if len(filtered_weights_pr_pv) == 2:
+            for doc_id, score in filtered_scores_pr_pv[1].items():
+                if doc_id in title_rel_docs_bm25_stem.keys() or doc_id in title_binary_docs_stem_no_stem.keys():
+                    filtered_scores_pr_pv[1][doc_id] = score * 2
+
         final_scores = filtered_scores + filtered_scores_pr_pv
         finals_weights = filtered_weights + filtered_weights_pr_pv
 
-        print(finals_weights)
 
         rankings = self.merge_ranking(final_scores, finals_weights)
 
-        print(f'final rankings: {list(map(lambda x: (self.id_to_title[x[0]], x[1]), rankings))}')
 
         # add titles
         res = list(map(lambda x: (str(x[0]), self.id_to_title.get(x[0], 'Unknown')), rankings))

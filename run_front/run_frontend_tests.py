@@ -1,8 +1,12 @@
 import json
+import pickle
+
 import requests
 from time import time
 import random
 import pickle
+from google.cloud import storage
+
 from google.cloud import storage
 
 with open('queries_train.json', 'rt') as f:
@@ -110,14 +114,17 @@ id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_str
 #         f.flush()
 
 
-url = 'http://34.41.106.69:8080'
+url = 'http://34.42.220.52:8080'
 
 
-all_weights_keys = ['body_bm25_bi', 'title_bm25_bi', 'body_bm25_stem', 'title_bm25_stem',
-                    'title_binary_stem', 'body_bm25_no_stem', 'title_bm25_no_stem', 'title_binary_no_stem',
+all_weights_keys = [
+                    # 'body_bm25_bi', 'title_bm25_bi',
+                    'body_bm25_stem', 'title_bm25_stem',
+                    'title_binary_stem', 'body_bm25_no_stem',
+                    # 'title_bm25_no_stem',
+                    'title_binary_no_stem',
                     'pr', 'pv']
-random_weights = [0.3345849255849659, 0.11478387587127781, 0.050648081826837665, 0.8529791931402924, 0.9986535404191297,
-                  0.15427742552472057, 0.9634622225830788, 0.802519801743927, 0.7686491715029344, 0.9295981852532758]
+random_weights = [0.12, 0.48, 0.72, 0.2, 0.98, 0.88, 0.44]
 weights_map = {key: value for key, value in zip(all_weights_keys, random_weights)}
 jsoned_rw = json.dumps(weights_map)
 total_duration = 0
@@ -125,26 +132,26 @@ total_result = 0
 total_q = 0
 total_pre = 0
 qs_res = []
+
 for q, true_wids in queries.items():
     pre = 0
     duration, rq = 0, 0
     t_start = time()
     try:
         res = requests.get(url + '/search', {'query': q, 'random_weights': jsoned_rw}, timeout=50)
-        print(res)
         duration = time() - t_start
         if res.status_code == 200:
             pred_wids, _ = zip(*res.json())
             rq = results_quality(true_wids, pred_wids)
             not_found = [x for x in pred_wids if x not in true_wids]
-            print(list(map(lambda x: id_to_title[int(x)], not_found)))
             pre = precision_at_k(true_wids, pred_wids, 10)
             # our_titles = list(map(lambda x: id_to_title[int(x)], pred_wids))
             # right_titles = list(map(lambda x: id_to_title[int(x)], true_wids))
             # print(our_titles)
             # print(right_titles)
-            # print(q)
-            # print(rq)
+            print(q)
+            print(rq)
+            print(pre)
 
 
     except Exception as e:
@@ -154,7 +161,6 @@ for q, true_wids in queries.items():
     total_q += 1
     total_duration += duration
     total_result += rq
-    break
     # qs_res.append((q, duration, rq))
 
 avg_duration = total_duration / total_q
