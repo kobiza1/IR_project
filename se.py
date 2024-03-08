@@ -309,6 +309,8 @@ class search_engine:
         if len(scores) > 0:
             min_score = min(scores)
             max_score = max(scores)
+            if max_score == 0:
+                return [0 for _ in scores]
             if min_score == max_score:
                 normalized_scores = [score / max_score for score in scores]
             else:
@@ -385,32 +387,39 @@ class search_engine:
         Returns:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
+        # True = tfidf,  False = bm25
 
         # body_rel_docs_tfidf_bigram, title_rel_docs_tfidf_bigram = \
         # (self.find_candidates_by_index(query_words, True, BIGRAM_BODY_FOLDER, BIGRAM_TITLE_FOLDER))
         # body_rel_docs_tfidf_stem, title_rel_docs_tfidf_bigram = \
         # (self.find_candidates_by_index(query_words, True, STEMMING_BODY_FOLDER, STEMMING_TITLE_FOLDER))
 
-        # True = tfidf False = bm25
 
-        query_words = self.fit_query(query, True, True)
+
+        # query_words = self.fit_query(query, True, True)
 
 
         # body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, title_binary_docs_bigram = (self.find_candidates_by_index
         #                                                                                    (query_words, False,
         #                                                                                     BIGRAM_BODY_FOLDER,
         #                                                                                     BIGRAM_TITLE_FOLDER))
-        # print(f'number of docs bm25 bigram body: {len(body_rel_docs_bm25_bigram)}')
-        # print(f'number of docs bm25 bigram title: {len(title_rel_docs_bm25_bigram)}')
-        # print(f'number of docs binary bigram title: {len(title_binary_docs_bigram)}')
 
+        # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
         query_words_no_bigram = self.fit_query(query, False, True)
+
+        # if len(query_words_no_bigram) == 1:
+        #     weights['title_binary_no_stem'] += 0.3
+        #     weights['pr'] += 0.15
+        # else:
+        #     weights['title_binary_no_stem'] -= 0.3
+        #     weights['pr'] -= 0.15
 
         body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, title_binary_docs_stem = (self.find_candidates_by_index
                                                                                      (query_words_no_bigram, False,
                                                                                       STEMMING_BODY_FOLDER,
                                                                                       STEMMING_TITLE_FOLDER))
 
+        # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
         query_words_no_stem_no_bigram = self.fit_query(query, False, False)
 
         body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem = (
@@ -444,7 +453,7 @@ class search_engine:
 
         filtered_scores_pr_pv, filtered_weights_pr_pv = self.get_non_empty_scores(pr_pv_map, weights)
 
-        pv_dict = {'pv': 0}
+
         if len(filtered_weights_pr_pv) == 2:
             for doc_id, score in filtered_scores_pr_pv[1].items():
                 if doc_id in title_rel_docs_bm25_stem.keys() or doc_id in title_binary_docs_stem_no_stem.keys():
