@@ -90,7 +90,6 @@ class MultiFileReader:
 TUPLE_SIZE = 6  # We're going to pack the doc_id and tf values in this
 # many bytes.
 TF_MASK = 2 ** 16 - 1  # Masking the 16 low bits of an integer
-TF_NORMALIZER = 20000
 
 
 class InvertedIndex:
@@ -178,7 +177,7 @@ class InvertedIndex:
             for i in range(self.df[w]):
                 doc_id = int.from_bytes(b[i * TUPLE_SIZE:i * TUPLE_SIZE + 4], 'big')
                 tf = int.from_bytes(b[i * TUPLE_SIZE + 4:(i + 1) * TUPLE_SIZE], 'big')
-                posting_list.append((doc_id, tf / TF_NORMALIZER))
+                posting_list.append((doc_id, tf))
         return posting_list
 
     @staticmethod
