@@ -58,7 +58,7 @@ def results_quality(true_list, predicted_list):
     return round(2.0 / (1.0 / p5 + 1.0 / f1_30), 3)
 
 
-url = 'http://34.42.220.52:8080'
+url = 'http://35.225.147.92:8080'
 
 # good_very_good_mucho_good = ['bioinformatics', 'Who painted "Starry Night"?', 'artificial intelligence',
 #                              'nanotechnology', 'neuroscience', 'snowboard']
@@ -72,17 +72,17 @@ id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_str
 
 with open('results.txt', 'a') as f:
     for i in range(1000):
+
         all_weights_keys = [
-            # 'body_bm25_bi', 'title_bm25_bi',
             'body_bm25_stem', 'title_bm25_stem',
             'title_binary_stem', 'body_bm25_no_stem',
-            # 'title_bm25_no_stem',
             'title_binary_no_stem',
-            'pr', 'pv']
-        # all_weights_keys = ['body_bm25_bi', 'title_bm25_bi', 'body_bm25_stem', 'title_bm25_stem',
-        #                     'title_binary_stem', 'body_bm25_no_stem', 'title_bm25_no_stem', 'title_binary_no_stem',
-        #                     'pr', 'pv']
-        random_weights = [random.randint(1, 50) * 0.02 for _ in range(7)]
+            'anchor_stem',
+             'pr', 'pv']
+
+        # random_weights = [random.randint(1, 50) * 0.02 for _ in range(8)]
+        r = random.randint(1, 50) * 0.02
+        random_weights = [0.88, 1.0, 0.74, 0.7000000000000001, 0.1] + [1] + [0.38, 0.9400000000000001]
 
         weights_map = {key: value for key, value in zip(all_weights_keys, random_weights)}
         print(weights_map)
@@ -91,6 +91,7 @@ with open('results.txt', 'a') as f:
         total_result = 0
         total_q = 0
         total_pre = 0
+        pre = 0
         qs_res = []
         for q, true_wids in queries.items():
             duration, rq = 0, 0

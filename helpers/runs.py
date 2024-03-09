@@ -1,3 +1,7 @@
+import json
+from flask import Flask, request, jsonify
+from se import search_engine
+
 # from matplotlib import pyplot as plt
 #
 # first_run = [('genetics', 2.518773078918457, 0.092), ('Who is considered the "Father of the United States"?', 70, 0), ('economic', 13.240584135055542, 0.089), ('When was the United Nations founded?', 66.14292097091675, 0.092), ('video gaming', 20.76684594154358, 0.0), ('3D printing technology', 10.478022813796997, 0.0), ('Who is the author of "1984"?', 20.62777590751648, 0.0), ('bioinformatics', 1.682426929473877, 0.22), ('Who is known for proposing the heliocentric model of the solar system?', 49.144999742507935, 0.0), ('Describe the process of water erosion.', 33.59993600845337, 0.046), ('When was the Berlin Wall constructed?', 18.7369647026062, 0.0), ('What is the meaning of the term "Habeas Corpus"?', 23.34450912475586, 0.09), ('telecommunications', 2.4513027667999268, 0.106), ('internet', 3.6825432777404785, 0.098), ('What are the characteristics of a chemical element?', 12.70386290550232, 0.0), ('Describe the structure of a plant cell.', 30.520446300506592, 0.0), ('Who painted "Starry Night"?', 14.096388816833496, 0.054), ('computer', 5.975239992141724, 0.083), ("What is the structure of the Earth's layers?", 12.617396116256714, 0.0), ('When did World War II end?', 55.920636892318726, 0.08), ('When was the Gutenberg printing press invented?', 15.032341003417969, 0.0), ('medicine', 3.3362009525299072, 0.094), ('Describe the water cycle.', 23.112583875656128, 0.0), ('artificial intelligence', 6.162524938583374, 0.223), ('physics', 5.794700860977173, 0.083), ('nanotechnology', 1.6450960636138916, 0.35), ('When did the Black Death pandemic occur?', 40.19928193092346, 0.083), ('neuroscience', 1.8876228332519531, 0.092), ('snowboard', 1.8164541721343994, 0.215), ('Who is the founder of modern psychology?', 19.369436979293823, 0.0)]
@@ -109,9 +113,9 @@ scores = ['body_bm25_bi', 'title_bm25_bi' ,
                       'title_binary_stem' , 'body_bm25_no_stem' ,
                       'title_bm25_no_stem' ,
                       'title_binary_no_stem', 'pr', 'pv' ]
-print(scores)
-fsdf = list(sorted(runs, key=lambda x: x[2], reverse=True))[:10]
-for tup in fsdf:
-    print(tup[0], tup[2])
+# print(scores)
+# fsdf = list(sorted(runs, key=lambda x: x[2], reverse=True))[:10]
+# for tup in fsdf:
+#     print(tup[0], tup[2])
 
 #{'body_bm25_bi': 0.98, 'title_bm25_bi': 0.84, 'body_bm25_stem': 0.66, 'title_bm25_stem': 0.92, 'title_binary_stem': 0.7000000000000001, 'body_bm25_no_stem': 0.42, 'title_bm25_no_stem': 0.9400000000000001, 'title_binary_no_stem': 0.1, 'pr': 0.8, 'pv': 0.98}
