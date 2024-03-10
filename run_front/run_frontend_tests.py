@@ -66,21 +66,21 @@ DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
 PROJECT_ID = 'final-project-415618'
 BUCKET_NAME = "tfidf_bucket_318437159"
 
-client = storage.Client(project=PROJECT_ID)
-bucket = client.get_bucket(BUCKET_NAME)
-id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
+# client = storage.Client(project=PROJECT_ID)
+# bucket = client.get_bucket(BUCKET_NAME)
+# id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
 
 with open('results.txt', 'a') as f:
     for i in range(1000):
 
         all_weights_keys = [
             'body_bm25_stem', 'title_bm25_stem',
-            'title_binary_stem', 'anchor_stem', 'title_bm25_no_stem',
+            'anchor_stem', 'title_bm25_no_stem',
              'pr', 'pv']
 
-        # random_weights = [random.randint(1, 50) * 0.02 for _ in range(7)]
-        r = random.randint(1, 50)*0.02
-        random_weights = [0.9400000000000001, 0.3, 0.02, 0.04, 0.52, 0.9, r]
+        random_weights = [random.randint(1, 50) * 0.02 for _ in range(6)]
+        # r = 0.1*i
+        # random_weights = [0.9400000000000001, 0.3, 0.04, 0.52, 0.9, 0.28]
 
         weights_map = {key: value for key, value in zip(all_weights_keys, random_weights)}
         print(weights_map)
@@ -95,16 +95,16 @@ with open('results.txt', 'a') as f:
             duration, rq = 0, 0
             t_start = time()
             try:
-                res = requests.get(url + '/search', {'query': q, 'random_weights': jsoned_rw}, timeout=150)
+                res = requests.get(url + '/search', {'query': q, 'random_weights': jsoned_rw}, timeout=35)
                 duration = time() - t_start
                 if res.status_code == 200:
                     pred_wids, _ = zip(*res.json())
                     rq = results_quality(true_wids, pred_wids)
                     pre = precision_at_k(true_wids, pred_wids, 10)
-                    our_titles = list(map(lambda x: id_to_title[int(x)], pred_wids))
-                    right_titles = list(map(lambda x: id_to_title[int(x)], true_wids))
-                    print(our_titles)
-                    print(right_titles)
+                    # our_titles = list(map(lambda x: id_to_title[int(x)], pred_wids))
+                    # right_titles = list(map(lambda x: id_to_title[int(x)], true_wids))
+                    # print(our_titles)
+                    # print(right_titles)
                     print(q)
                     print(rq)
                     print(pre)

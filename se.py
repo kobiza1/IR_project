@@ -3,6 +3,7 @@ import gzip
 import csv
 import pickle
 import threading
+import concurrent.futures
 import numpy as np
 import math
 from nltk.stem.porter import *
@@ -21,10 +22,10 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
                     "became", "make", "accordingly", "hence", "namely", "therefore", "thus", "consequently",
                     "meanwhile", "accordingly", "likewise", "similarly", "notwithstanding", "nonetheless", "despite",
                     "whereas", "furthermore", "moreover", "nevertheless", "although", "notably", "notwithstanding",
-                    "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence", 'considered', 'consider']
+                    "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence", 'considered',
+                    'consider']
 
 SIZE_OF_WIKI = 6348910
-lock = threading.Lock()
 
 # params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, 'bm25_body_weight': 8.798177098065569,
 #           'bm25_title_weight': 0.49852365380857405, 'bm25_body_bi_weight': 0.3017628167759724,
@@ -54,21 +55,25 @@ DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
 PR_FILE = "pr_full_run/part-00000-d70a55fc-ebc4-4920-8b29-b57541c978c0-c000.csv.gz"
 PV_FILE = "wid2pv.pkl"
 
+lock = threading.Lock()
+
+
 # PV_MEAN = 674.0488855666746
 # PV_STD = 55916.041828254696
 # PR_MEAN = 0.9999999999999324
 # PR_STD = 12.416830511713206
 
 
-
-
 class search_engine:
 
     def __init__(self):
 
+        self.inverted_indexes_lock = threading.Lock()
         self.inverted_indexes_dict = dict()  # dict of inverted indexes
         self.term_idf_dict = dict()  # tfidf dict
+        self.term_idf_lock = threading.Lock()
         self.pr = dict()  # page rank dict
+        self.averageDl_lock = threading.Lock()
         self.averageDl = dict()  # document len dict
         self.stemmer = PorterStemmer()
         self.id_to_title = dict()
@@ -86,10 +91,11 @@ class search_engine:
 
             # self.load_index(INDEX_FOLDER, BIGRAM_TITLE_FOLDER)
             # self.load_index(INDEX_FOLDER, BIGRAM_BODY_FOLDER)
-            self.load_index(INDEX_FOLDER, NO_STEM_ANCHOR_FOLDER)
+            # self.load_index(INDEX_FOLDER, NO_STEM_ANCHOR_FOLDER)
+            # self.load_index(INDEX_FOLDER, NO_STEM_BODY_FOLDER)
+
             self.load_index(INDEX_FOLDER, STEMMING_BODY_FOLDER)
             self.load_index(INDEX_FOLDER, STEMMING_TITLE_FOLDER)
-            self.load_index(INDEX_FOLDER, NO_STEM_BODY_FOLDER)
             self.load_index(INDEX_FOLDER, NO_STEM_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, STEM_ANCHOR_FOLDER)
 
@@ -111,54 +117,43 @@ class search_engine:
             raise e
 
     def load_index(self, path_to_folder, index_name):
+        """
+        Loads an inverted index from a specified folder and updates the search engine's internal state.
 
+        Args:
+        - path_to_folder (str): Path to the folder containing the index data.
+        - index_name (str): Name of the index.
+        """
         pickle_index = InvertedIndex.read_index(path_to_folder, index_name, BUCKET_NAME)
 
         self.inverted_indexes_dict[index_name] = pickle_index
         self.calculate_idf_from_index(pickle_index, index_name)
         self.averageDl[index_name] = self.calc_average_dl(pickle_index)
 
-    def find_candidates_by_index(self, query_words, tfidf_or_bm25, index_name_body, index_name_title, index_name_anchor, stem):
+    def find_candidates_by_index(self, query_words, index_name, binary=False):
         """
-        Finds candidates by index based on the provided query words, index types, and index names.
+        Finds candidates by index based on the provided query words and index names.
 
         Args:
         - query_words (list): List of query words.
-        - tfidf_or_bm25 (bool): Flag indicating whether to use TF-IDF or BM25 scoring.
-        - index_name_body (str): Name of the index for the body.
-        - index_name_title (str): Name of the index for the title.
+        - index_name(str): Name of the index.
+        - binary (bool): If we use binary ranking or fast cosin
 
         Returns:
-        - body_ranked_docs (dict): Dictionary containing ranked documents for the body index.
-        - title_ranked_docs (dict): Dictionary containing ranked documents for the title index.
-        - title_binary_docs (dict): Dictionary containing binary documents for the title index.
+        - ranked_res (dict): Dictionary containing ranked documents for the index.
+
         """
         # stem and bigram with doc len normalization:
 
+        first_res = self.find_relevant_docs(query_words, index_name)
+        ranked_res = self.rank_candidates_by_index(first_res, index_name)
+        if binary:
+            binary_ranked_res = self.rank_candidates_by_index(first_res, index_name, binary=binary)
+            return ranked_res, binary_ranked_res
 
-        title_first_res = self.find_relevant_docs(query_words, index_name_title)
+        return ranked_res
 
-
-
-        if stem:
-            body_first_res = self.find_relevant_docs(query_words, index_name_body)
-            anchor_first_res = self.find_relevant_docs(query_words, index_name_anchor)
-            anchor_ranked_docs = self.rank_by_binary(anchor_first_res)
-
-
-        else:
-            anchor_ranked_docs = Counter()
-            body_first_res = Counter()
-
-        body_ranked_docs, title_ranked_docs, title_binary_docs = self.rank_candidates_by_index(body_first_res,
-                                                                                               title_first_res,
-                                                                                               index_name_body,
-                                                                                               index_name_title,
-                                                                                               tfidf_or_bm25, stem)
-
-        return body_ranked_docs, title_ranked_docs, title_binary_docs, anchor_ranked_docs
-
-    def rank_candidates_by_index(self, rel_docs_body, rel_doc_title, index_name_body, index_name_title, tfidf_or_bm25, stem):
+    def rank_candidates_by_index(self, rel_docs, index_name, binary=False):
         """
         Ranks candidates by index based on the provided relevant documents, index names, and scoring method.
 
@@ -175,18 +170,12 @@ class search_engine:
         - title_binary_docs (dict): Dictionary containing ranked documents for the title index by binary.
         """
 
+        if binary:
+            binary_docs = self.rank_by_binary(rel_docs)
+            return binary_docs
 
-        title_ranked_docs = self.rank_docs_by_fast_cosin(rel_doc_title, index_name_title, tfidf_or_bm25)
-
-        if stem:
-            body_ranked_docs = self.rank_docs_by_fast_cosin(rel_docs_body, index_name_body, tfidf_or_bm25)
-            title_binary_docs = self.rank_by_binary(rel_doc_title)
-
-        else:
-            title_binary_docs = Counter()
-            body_ranked_docs = Counter()
-
-        return body_ranked_docs, title_ranked_docs, title_binary_docs
+        ranked_docs = self.rank_docs_by_fast_cosin(rel_docs, index_name)
+        return ranked_docs
 
     def calculate_idf_from_index(self, index, index_name):
         """
@@ -204,6 +193,16 @@ class search_engine:
             raise e
 
     def pr_docs_from_relevant_docs(self, rel_docs):
+        """
+        Retrieves PageRank scores for relevant documents.
+
+        Args:
+        - rel_docs (list): List of relevant document IDs.
+
+        Returns:
+        - pr_docs (Counter): Counter object containing PageRank scores for relevant documents.
+
+        """
         pr_docs = Counter()
         for doc_id in rel_docs:
             if doc_id in self.pr:
@@ -214,32 +213,71 @@ class search_engine:
         return pr_docs
 
     def pv_docs_from_relevant_docs(self, rel_docs):
+        """
+        Retrieves PageView scores for relevant documents.
+
+        Args:
+        - rel_docs (list): List of relevant document IDs.
+
+        Returns:
+        - pv_docs (Counter): Counter object containing PageView scores for relevant documents.
+
+        """
         pv_docs = Counter()
         for doc_id in rel_docs:
             if doc_id in self.pv:
-                page_rank = self.pv[doc_id]
-                pv_docs[doc_id] = page_rank
+                page_view = self.pv[doc_id]
+                pv_docs[doc_id] = page_view
             else:
                 pv_docs[doc_id] = 0
         return pv_docs
 
-    def calc_rank_doc_len_norm(self, tf, idf, tfidf_or_bm25, index_name, dl):
-        if tfidf_or_bm25:
-            if dl != 0:
-                tf = tf / dl
-            rank = tf * idf
-        else:
+    def calc_rank_doc_len_norm(self, tf, idf, index_name, dl):
+        """
+        Calculates the document ranking score with length normalization.
+
+        Args:
+        - tf (float): Term Frequency.
+        - idf (float): Inverse Document Frequency.
+        - index_name (str): Name of the index.
+        - dl (int): Document Length.
+
+        Returns:
+        - rank (float): Document ranking score with length normalization.
+
+        Notes:
+        - If tfidf_or_bm25 is True, The ranking score is calculated using the tfidf.
+        -
+        """
+        # if tfidf_or_bm25:
+        #     if dl != 0:
+        #         tf = tf / dl
+        #     rank = tf * idf
+
+        with self.averageDl_lock:
             ave_dl = self.averageDl[index_name]
-            rank = self.calculate_bm25(idf, tf, dl, ave_dl)
+        rank = self.calculate_bm25(idf, tf, dl, ave_dl)
         return rank
 
     def get_doc_len(self, doc_id, index_name):
-        index = self.inverted_indexes_dict[index_name]
+        """
+        Retrieves the length of a document from the specified index.
+
+        Args:
+        - doc_id (str): Document ID.
+        - index_name (str): Name of the index.
+
+        Returns:
+        - doc_len (int): Length of the document.
+
+        """
+        with self.inverted_indexes_lock:
+            index = self.inverted_indexes_dict[index_name]
         if doc_id not in index.dl:
             return 1
         return index.dl[doc_id]
 
-    def rank_docs_by_fast_cosin(self, rel_docs, index_name, tfidf_or_bm25):
+    def rank_docs_by_fast_cosin(self, rel_docs, index_name):
         """
         Ranks documents by cosine similarity with TF-IDF or BM25 scoring.
 
@@ -253,27 +291,53 @@ class search_engine:
         """
 
         ranked_docs = Counter()
-        idf_dic = self.term_idf_dict[index_name]
+        with self.term_idf_lock:
+            idf_dic = self.term_idf_dict[index_name]
         for doc_id, tups in rel_docs.items():
             dl = self.get_doc_len(doc_id, index_name)
             for term, tf in tups:
-                idf = idf_dic[term]
-                rank = self.calc_rank_doc_len_norm(tf, idf, tfidf_or_bm25, index_name, dl)
+                with self.term_idf_lock:
+                    idf = idf_dic[term]
+                rank = self.calc_rank_doc_len_norm(tf, idf, index_name, dl)
                 ranked_docs.update({doc_id: rank})
         return ranked_docs
 
     def fit_query(self, query, bigram, stem):
+        """
+        Prepares and processes a query based on specified options.
+
+        Args:
+        - query (str): Input query string.
+        - bigram (bool): If True, generates bigrams from the query.
+        - stem (bool): If True, applies stemming to the query.
+
+        Returns:
+        - tokens (list): List of processed query tokens.
+
+        """
         tokens = [token.group() for token in RE_WORD.finditer(query.lower())]
         tokens = [tok for tok in tokens if tok not in ALL_STOP_WORDS]
+
         if stem:
             tokens = [self.stemmer.stem(token) for token in tokens]
+
         if bigram:
             tokens = list(ngrams(tokens, 2))
             tokens = [' '.join(bigram) for bigram in tokens]
+
         return tokens
 
-    def read_posting_list(self, term, index, posting_list_lists):
+    @staticmethod
+    def read_posting_list(term, index, posting_list_lists):
+        """
+        Reads a posting list for a given term from the index and appends it to a list.
 
+        Args:
+        - term (str): Term for which the posting list is retrieved.
+        - index (object): Index object with a method 'read_a_posting_list'.
+        - posting_list_lists (list): List to which the posting list information is appended.
+
+        """
         posting_list = index.read_a_posting_list(term, BUCKET_NAME)
         with lock:
             posting_list_lists.append((term, posting_list))
@@ -288,43 +352,78 @@ class search_engine:
         Returns:
         - rel_docs (dict): Dictionary containing relevant documents and their corresponding term frequencies.
         """
-        index = self.inverted_indexes_dict[index_name]
+        with self.inverted_indexes_lock:
+            index = self.inverted_indexes_dict[index_name]
         unique_words = np.unique(query_words)
         rel_docs = dict()
-        posting_list_lists = []
-        # Create thread objects
         threads = []
+        posting_list_lists = []
 
         for term in unique_words:
             thread = threading.Thread(target=self.read_posting_list, args=(term, index, posting_list_lists))
             threads.append(thread)
 
-        # Start the threads
         for thread in threads:
             thread.start()
 
-        # Wait for all threads to finish
         for thread in threads:
             thread.join()
 
         for term, posting_list in posting_list_lists:
             for doc_id, tf in posting_list:
                 rel_docs.setdefault(doc_id, []).append((term, tf))
-
         return rel_docs
 
     @staticmethod
     def calculate_bm25(idf, tf, dl, avg_dl, k=1.5, b=0.75):
+        """
+        Calculates the BM25 ranking score for a term in a document.
+
+        Args:
+        - idf (float): Inverse Document Frequency.
+        - tf (float): Term Frequency.
+        - dl (int): Document Length.
+        - avg_dl (float): Average Document Length.
+        - k (float): BM25 parameter controlling saturation, default is 1.5.
+        - b (float): BM25 parameter controlling length normalization, default is 0.75.
+
+        Returns:
+        - bm25_score (float): BM25 ranking score.
+
+        """
         return idf * (tf * (k + 1) / (tf + k * (1 - b + b * (dl / avg_dl))))
 
     @staticmethod
     def calc_average_dl(index):
+        """
+        Calculates the average document length for an index.
+
+        Args:
+        - index (object): Index object with a 'dl' attribute containing document lengths.
+
+        Returns:
+        - avg_dl (float): Average document length.
+
+        """
         total_sum = sum(index.dl.values())
         # Calculate the average
         return total_sum / len(index.dl)
 
     def merge_ranking(self, lst_of_ranked_docs, weights, limit=100):
+        """
+        Merges multiple rankings using weighted scores and returns a sorted merged ranking.
+
+        Args:
+        - lst_of_ranked_docs (list): List of dictionaries containing document IDs and scores.
+        - weights (list): List of weights corresponding to each ranking.
+        - limit (int): Maximum number of documents to include in the merged ranking, default is 100.
+
+        Returns:
+        - merged_ranking (Counter): Counter object containing merged and weighted document scores.
+
+        """
         merged_ranking = Counter()
+
         # Merge rankings
         for ranked_docs, weight in zip(lst_of_ranked_docs, weights):
             for doc_id, score in ranked_docs.items():
@@ -335,6 +434,17 @@ class search_engine:
 
     @staticmethod
     def sort_ranked_docs(ranked_docs, limit=2000):
+        """
+        Sorts a dictionary of ranked documents by score in descending order.
+
+        Args:
+        - ranked_docs (dict): Dictionary containing document IDs and scores.
+        - limit (int): Maximum number of documents to include in the sorted list, default is 2000.
+
+        Returns:
+        - sorted_ranked_docs (list): List of tuples containing sorted document IDs and scores.
+
+        """
         sorted_ranked_docs = list(sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True))
         if limit > len(sorted_ranked_docs):
             return sorted_ranked_docs
@@ -361,11 +471,23 @@ class search_engine:
 
     @staticmethod
     def normalize_scores(scores):
+        """
+        Normalizes a list of scores to the range [0, 1].
+
+        Args:
+        - scores (list): List of numerical scores.
+
+        Returns:
+        - normalized_scores (list): List of normalized scores.
+
+        """
         if len(scores) > 0:
             min_score = min(scores)
             max_score = max(scores)
+
             if max_score == 0:
                 return [0 for _ in scores]
+
             if min_score == max_score:
                 normalized_scores = [score / max_score for score in scores]
             else:
@@ -431,6 +553,60 @@ class search_engine:
 
         return filtered_scores, filtered_weights
 
+    def anchor_candidates(self, query_words, index_name, binary=True):
+        """
+        Retrieves anchor candidates based on the provided query words and index.
+
+        Args:
+        - query_words (list): List of query words.
+        - index_name (str): Name of the index.
+        - binary (bool): If True, generates binary ranking.
+
+        Returns:
+        - ranked_res (dict): Dictionary containing ranked anchor candidates.
+
+        """
+        first_res = self.find_relevant_docs(query_words, index_name)
+
+        if binary:
+            ranked_res = self.rank_candidates_by_index(first_res, index_name, binary=binary)
+            return ranked_res
+        else:
+            ranked_res = self.rank_candidates_by_index(first_res, index_name)
+            return ranked_res
+
+    def find_candidates_parallel(self, query):
+        """
+        Finds candidates in parallel based on the provided query.
+
+        Args:
+        - query (str): Input query string.
+
+        Returns:
+        - body_rel_docs_bm25_stem (dict): Body relevant documents with BM25 stemming.
+        - title_rel_docs_bm25_stem (dict): Title relevant documents with BM25 stemming.
+        - anchor_binary_docs_stem (dict): Anchor binary documents with BM25 stemming.
+        - title_rel_docs_bm25_no_stem (dict): Title relevant documents with BM25 and no stemming.
+
+        """
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
+            query_words = self.fit_query(query, False, True)
+            body_future = executor.submit(self.find_candidates_by_index, query_words, STEMMING_BODY_FOLDER)
+            title_future = executor.submit(self.anchor_candidates, query_words, STEMMING_TITLE_FOLDER, False)
+            anchor_future = executor.submit(self.anchor_candidates, query_words, STEM_ANCHOR_FOLDER)
+
+            query_words_no_stem = self.fit_query(query, False, False)
+            title_future_no_stem = executor.submit(self.find_candidates_by_index, query_words_no_stem,
+                                                   NO_STEM_TITLE_FOLDER)
+
+            # Retrieve results when ready
+            body_rel_docs_bm25_stem = body_future.result()
+            title_rel_docs_bm25_stem = title_future.result()
+            anchor_binary_docs_stem = anchor_future.result()
+            title_rel_docs_bm25_no_stem = title_future_no_stem.result()
+
+            return body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem
 
     def search(self, query, weights):
         """
@@ -443,90 +619,43 @@ class search_engine:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
 
-        # True = tfidf,  False = bm25
-
-        # body_rel_docs_tfidf_bigram, title_rel_docs_tfidf_bigram = \
-        # (self.find_candidates_by_index(query_words, True, BIGRAM_BODY_FOLDER, BIGRAM_TITLE_FOLDER))
-        # body_rel_docs_tfidf_stem, title_rel_docs_tfidf_bigram = \
-        # (self.find_candidates_by_index(query_words, True, STEMMING_BODY_FOLDER, STEMMING_TITLE_FOLDER))
-
-
-
-        # query_words = self.fit_query(query, True, True)
-
-
-        # body_rel_docs_bm25_bigram, title_rel_docs_bm25_bigram, title_binary_docs_bigram = (self.find_candidates_by_index
-        #                                                                                    (query_words, False,
-        #                                                                                     BIGRAM_BODY_FOLDER,
-        #                                                                                     BIGRAM_TITLE_FOLDER))
-
-        # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
-        query_words_no_bigram = self.fit_query(query, False, True)
-
-
-        # if len(query_words_no_bigram) == 1:
-        #     weights['title_binary_no_stem'] += 0.3
-        #     weights['pr'] += 0.15
-        # else:
-        #     weights['title_binary_no_stem'] -= 0.3
-        #     weights['pr'] -= 0.15
-
-        body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, title_binary_docs_stem, anchor_binary_docs_stem = (self.find_candidates_by_index
-                                                                                     (query_words_no_bigram, False,
-                                                                                      STEMMING_BODY_FOLDER,
-                                                                                      STEMMING_TITLE_FOLDER, STEM_ANCHOR_FOLDER, True))
-
-        # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
-        query_words_no_stem_no_bigram = self.fit_query(query, False, False)
-
-        body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem, anchor_binary_docs_no_stem = (self.find_candidates_by_index
-            (query_words_no_stem_no_bigram, False,
-             NO_STEM_BODY_FOLDER,
-             NO_STEM_TITLE_FOLDER, NO_STEM_ANCHOR_FOLDER, False))
-
+        body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, \
+            anchor_binary_docs_stem, title_rel_docs_bm25_no_stem = self.find_candidates_parallel(query)
 
         all_scores = {
-                      'body_bm25_stem': body_rel_docs_bm25_stem, 'title_bm25_stem': title_rel_docs_bm25_stem,
-                      'title_binary_stem': title_binary_docs_stem, 'anchor_stem': anchor_binary_docs_stem,
-                    'title_bm25_no_stem': title_rel_docs_bm25_no_stem}
-
+            'body_bm25_stem': body_rel_docs_bm25_stem, 'title_bm25_stem': title_rel_docs_bm25_stem,
+             'anchor_stem': anchor_binary_docs_stem,
+            'title_bm25_no_stem': title_rel_docs_bm25_no_stem}
 
         filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
 
-        # all_docs = set()
-        # for d in filtered_scores:
-        #     for doc_id, _ in d.items():
-        #         all_docs.add(doc_id)
-        #
-        # all_docs_list = list(all_docs)
+        rankings = self.merge_ranking(filtered_scores, filtered_weights, 700)
 
-        rankings = self.merge_ranking(filtered_scores, filtered_weights, 1000)
-        all_docs = []
+        first_1000_docs = []
+        first_1000_docs_dict = dict()
 
-        for doc_id, _ in rankings:
-            all_docs.append(doc_id)
+        for doc_id, score in rankings:
+            first_1000_docs.append(doc_id)
+            first_1000_docs_dict[doc_id] = score
 
-        pr_rel_docs = self.pr_docs_from_relevant_docs(all_docs)
-        pv_rel_docs = self.pv_docs_from_relevant_docs(all_docs)
+        already_weighted = [1]
 
+        pr_rel_docs = self.pr_docs_from_relevant_docs(first_1000_docs)
+        pv_rel_docs = self.pv_docs_from_relevant_docs(first_1000_docs)
 
         pr_pv_map = {"pr": pr_rel_docs, "pv": pv_rel_docs}
 
         filtered_scores_pr_pv, filtered_weights_pr_pv = self.get_non_empty_scores(pr_pv_map, weights)
-
 
         if len(filtered_weights_pr_pv) == 2:
             for doc_id, score in filtered_scores_pr_pv[1].items():
                 if doc_id in title_rel_docs_bm25_stem.keys():
                     filtered_scores_pr_pv[1][doc_id] = score * 2
 
-
-        final_scores = filtered_scores + filtered_scores_pr_pv
-        finals_weights = filtered_weights + filtered_weights_pr_pv
-
+        final_scores = [first_1000_docs_dict] + filtered_scores_pr_pv
+        finals_weights = already_weighted + filtered_weights_pr_pv
 
         rankings = self.merge_ranking(final_scores, finals_weights)
-
 
         # add titles
         res = list(map(lambda x: (str(x[0]), self.id_to_title.get(x[0], 'Unknown')), rankings))
