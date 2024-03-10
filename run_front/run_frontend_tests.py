@@ -75,14 +75,12 @@ with open('results.txt', 'a') as f:
 
         all_weights_keys = [
             'body_bm25_stem', 'title_bm25_stem',
-            'title_binary_stem', 'body_bm25_no_stem',
-            'title_binary_no_stem',
-            'anchor_stem',
+            'title_binary_stem', 'anchor_stem', 'title_bm25_no_stem',
              'pr', 'pv']
 
-        # random_weights = [random.randint(1, 50) * 0.02 for _ in range(8)]
-        r = random.randint(1, 50) * 0.02
-        random_weights = [0.88, 1.0, 0.74, 0.7000000000000001, 0.1] + [1] + [0.38, 0.9400000000000001]
+        # random_weights = [random.randint(1, 50) * 0.02 for _ in range(7)]
+        r = random.randint(1, 50)*0.02
+        random_weights = [0.9400000000000001, 0.3, 0.02, 0.04, 0.52, 0.9, r]
 
         weights_map = {key: value for key, value in zip(all_weights_keys, random_weights)}
         print(weights_map)
@@ -103,12 +101,13 @@ with open('results.txt', 'a') as f:
                     pred_wids, _ = zip(*res.json())
                     rq = results_quality(true_wids, pred_wids)
                     pre = precision_at_k(true_wids, pred_wids, 10)
-                    # our_titles = list(map(lambda x: id_to_title[int(x)], pred_wids))
-                    # right_titles = list(map(lambda x: id_to_title[int(x)], true_wids))
-                    # print(our_titles)
-                    # print(right_titles)
+                    our_titles = list(map(lambda x: id_to_title[int(x)], pred_wids))
+                    right_titles = list(map(lambda x: id_to_title[int(x)], true_wids))
+                    print(our_titles)
+                    print(right_titles)
                     print(q)
                     print(rq)
+                    print(pre)
 
             except Exception as e:
                 # print(e)

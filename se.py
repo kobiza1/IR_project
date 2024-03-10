@@ -2,6 +2,7 @@ import io
 import gzip
 import csv
 import pickle
+import threading
 import numpy as np
 import math
 from nltk.stem.porter import *
@@ -20,9 +21,10 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
                     "became", "make", "accordingly", "hence", "namely", "therefore", "thus", "consequently",
                     "meanwhile", "accordingly", "likewise", "similarly", "notwithstanding", "nonetheless", "despite",
                     "whereas", "furthermore", "moreover", "nevertheless", "although", "notably", "notwithstanding",
-                    "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence"]
+                    "nonetheless", "despite", "whereas", "furthermore", "moreover", "notably", "hence", 'considered', 'consider']
 
 SIZE_OF_WIKI = 6348910
+lock = threading.Lock()
 
 # params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, 'bm25_body_weight': 8.798177098065569,
 #           'bm25_title_weight': 0.49852365380857405, 'bm25_body_bi_weight': 0.3017628167759724,
@@ -58,13 +60,16 @@ PV_FILE = "wid2pv.pkl"
 # PR_STD = 12.416830511713206
 
 
+
+
 class search_engine:
 
     def __init__(self):
-        self.inverted_indexes_dict = dict()
-        self.term_idf_dict = dict()
-        self.pr = dict()
-        self.averageDl = dict()
+
+        self.inverted_indexes_dict = dict()  # dict of inverted indexes
+        self.term_idf_dict = dict()  # tfidf dict
+        self.pr = dict()  # page rank dict
+        self.averageDl = dict()  # document len dict
         self.stemmer = PorterStemmer()
         self.id_to_title = dict()
         self._load_indices()
@@ -78,17 +83,19 @@ class search_engine:
             bucket = client.get_bucket(BUCKET_NAME)
 
             print("loading indexes")
-            self.load_index(INDEX_FOLDER, STEMMING_BODY_FOLDER)
-            self.load_index(INDEX_FOLDER, STEMMING_TITLE_FOLDER)
+
             # self.load_index(INDEX_FOLDER, BIGRAM_TITLE_FOLDER)
             # self.load_index(INDEX_FOLDER, BIGRAM_BODY_FOLDER)
+            self.load_index(INDEX_FOLDER, NO_STEM_ANCHOR_FOLDER)
+            self.load_index(INDEX_FOLDER, STEMMING_BODY_FOLDER)
+            self.load_index(INDEX_FOLDER, STEMMING_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, NO_STEM_BODY_FOLDER)
             self.load_index(INDEX_FOLDER, NO_STEM_TITLE_FOLDER)
-            self.load_index(INDEX_FOLDER, NO_STEM_ANCHOR_FOLDER)
             self.load_index(INDEX_FOLDER, STEM_ANCHOR_FOLDER)
 
             print("loading doc id 2 title index")
             self.id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
+
             print("loading page views")
             # loading page_view
             self.pv = pickle.loads(bucket.get_blob(PV_FILE).download_as_string())
@@ -111,7 +118,7 @@ class search_engine:
         self.calculate_idf_from_index(pickle_index, index_name)
         self.averageDl[index_name] = self.calc_average_dl(pickle_index)
 
-    def find_candidates_by_index(self, query_words, tfidf_or_bm25, index_name_body, index_name_title, index_name_anchor):
+    def find_candidates_by_index(self, query_words, tfidf_or_bm25, index_name_body, index_name_title, index_name_anchor, stem):
         """
         Finds candidates by index based on the provided query words, index types, and index names.
 
@@ -127,21 +134,31 @@ class search_engine:
         - title_binary_docs (dict): Dictionary containing binary documents for the title index.
         """
         # stem and bigram with doc len normalization:
-        body_first_res = self.find_relevant_docs(query_words, index_name_body)
+
+
         title_first_res = self.find_relevant_docs(query_words, index_name_title)
-        anchor_first_res = self.find_relevant_docs(query_words, index_name_anchor)
+
+
+
+        if stem:
+            body_first_res = self.find_relevant_docs(query_words, index_name_body)
+            anchor_first_res = self.find_relevant_docs(query_words, index_name_anchor)
+            anchor_ranked_docs = self.rank_by_binary(anchor_first_res)
+
+
+        else:
+            anchor_ranked_docs = Counter()
+            body_first_res = Counter()
 
         body_ranked_docs, title_ranked_docs, title_binary_docs = self.rank_candidates_by_index(body_first_res,
                                                                                                title_first_res,
                                                                                                index_name_body,
                                                                                                index_name_title,
-                                                                                               tfidf_or_bm25)
-        anchor_ranked_docs = self.rank_by_binary(anchor_first_res)
-
+                                                                                               tfidf_or_bm25, stem)
 
         return body_ranked_docs, title_ranked_docs, title_binary_docs, anchor_ranked_docs
 
-    def rank_candidates_by_index(self, rel_docs_body, rel_doc_title, index_name_body, index_name_title, tfidf_or_bm25):
+    def rank_candidates_by_index(self, rel_docs_body, rel_doc_title, index_name_body, index_name_title, tfidf_or_bm25, stem):
         """
         Ranks candidates by index based on the provided relevant documents, index names, and scoring method.
 
@@ -158,9 +175,16 @@ class search_engine:
         - title_binary_docs (dict): Dictionary containing ranked documents for the title index by binary.
         """
 
-        body_ranked_docs = self.rank_docs_by_fast_cosin(rel_docs_body, index_name_body, tfidf_or_bm25)
+
         title_ranked_docs = self.rank_docs_by_fast_cosin(rel_doc_title, index_name_title, tfidf_or_bm25)
-        title_binary_docs = self.rank_by_binary(rel_doc_title)
+
+        if stem:
+            body_ranked_docs = self.rank_docs_by_fast_cosin(rel_docs_body, index_name_body, tfidf_or_bm25)
+            title_binary_docs = self.rank_by_binary(rel_doc_title)
+
+        else:
+            title_binary_docs = Counter()
+            body_ranked_docs = Counter()
 
         return body_ranked_docs, title_ranked_docs, title_binary_docs
 
@@ -248,22 +272,45 @@ class search_engine:
             tokens = [' '.join(bigram) for bigram in tokens]
         return tokens
 
+    def read_posting_list(self, term, index, posting_list_lists):
+
+        posting_list = index.read_a_posting_list(term, BUCKET_NAME)
+        with lock:
+            posting_list_lists.append((term, posting_list))
+
     def find_relevant_docs(self, query_words, index_name):
         """
         Searches for documents containing the query words within a specific index.
         Args:
         - query_words (list): List of query words.
         - index_name (str): Name of the index to search within.
+        - stem (bool): If we use stem or no
         Returns:
         - rel_docs (dict): Dictionary containing relevant documents and their corresponding term frequencies.
         """
         index = self.inverted_indexes_dict[index_name]
         unique_words = np.unique(query_words)
         rel_docs = dict()
+        posting_list_lists = []
+        # Create thread objects
+        threads = []
+
         for term in unique_words:
-            posting_list = index.read_a_posting_list(term, BUCKET_NAME)
+            thread = threading.Thread(target=self.read_posting_list, args=(term, index, posting_list_lists))
+            threads.append(thread)
+
+        # Start the threads
+        for thread in threads:
+            thread.start()
+
+        # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+
+        for term, posting_list in posting_list_lists:
             for doc_id, tf in posting_list:
                 rel_docs.setdefault(doc_id, []).append((term, tf))
+
         return rel_docs
 
     @staticmethod
@@ -287,7 +334,7 @@ class search_engine:
         return self.sort_ranked_docs(merged_ranking, limit)
 
     @staticmethod
-    def sort_ranked_docs(ranked_docs, limit=2000):  # TODO: NEED LIMIT? IF YES HOW MUCH?
+    def sort_ranked_docs(ranked_docs, limit=2000):
         sorted_ranked_docs = list(sorted(ranked_docs.items(), key=lambda x: x[1], reverse=True))
         if limit > len(sorted_ranked_docs):
             return sorted_ranked_docs
@@ -395,6 +442,7 @@ class search_engine:
         Returns:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
+
         # True = tfidf,  False = bm25
 
         # body_rel_docs_tfidf_bigram, title_rel_docs_tfidf_bigram = \
@@ -415,6 +463,7 @@ class search_engine:
         # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
         query_words_no_bigram = self.fit_query(query, False, True)
 
+
         # if len(query_words_no_bigram) == 1:
         #     weights['title_binary_no_stem'] += 0.3
         #     weights['pr'] += 0.15
@@ -425,7 +474,7 @@ class search_engine:
         body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, title_binary_docs_stem, anchor_binary_docs_stem = (self.find_candidates_by_index
                                                                                      (query_words_no_bigram, False,
                                                                                       STEMMING_BODY_FOLDER,
-                                                                                      STEMMING_TITLE_FOLDER, STEM_ANCHOR_FOLDER))
+                                                                                      STEMMING_TITLE_FOLDER, STEM_ANCHOR_FOLDER, True))
 
         # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
         query_words_no_stem_no_bigram = self.fit_query(query, False, False)
@@ -433,27 +482,33 @@ class search_engine:
         body_rel_docs_bm25_no_stem, title_rel_docs_bm25_no_stem, title_binary_docs_stem_no_stem, anchor_binary_docs_no_stem = (self.find_candidates_by_index
             (query_words_no_stem_no_bigram, False,
              NO_STEM_BODY_FOLDER,
-             NO_STEM_TITLE_FOLDER, NO_STEM_ANCHOR_FOLDER))
+             NO_STEM_TITLE_FOLDER, NO_STEM_ANCHOR_FOLDER, False))
 
 
         all_scores = {
                       'body_bm25_stem': body_rel_docs_bm25_stem, 'title_bm25_stem': title_rel_docs_bm25_stem,
-                      'title_binary_stem': title_binary_docs_stem, 'body_bm25_no_stem': body_rel_docs_bm25_no_stem,
-                      'title_binary_no_stem': title_binary_docs_stem_no_stem,
-                        'anchor_stem': anchor_binary_docs_stem}
+                      'title_binary_stem': title_binary_docs_stem, 'anchor_stem': anchor_binary_docs_stem,
+                    'title_bm25_no_stem': title_rel_docs_bm25_no_stem}
 
 
         filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
 
-        all_docs = set()
-        for d in filtered_scores:
-            for doc_id, _ in d.items():
-                all_docs.add(doc_id)
+        # all_docs = set()
+        # for d in filtered_scores:
+        #     for doc_id, _ in d.items():
+        #         all_docs.add(doc_id)
+        #
+        # all_docs_list = list(all_docs)
 
-        all_docs_list = list(all_docs)
+        rankings = self.merge_ranking(filtered_scores, filtered_weights, 1000)
+        all_docs = []
 
-        pr_rel_docs = self.pr_docs_from_relevant_docs(all_docs_list)
-        pv_rel_docs = self.pv_docs_from_relevant_docs(all_docs_list)
+        for doc_id, _ in rankings:
+            all_docs.append(doc_id)
+
+        pr_rel_docs = self.pr_docs_from_relevant_docs(all_docs)
+        pv_rel_docs = self.pv_docs_from_relevant_docs(all_docs)
+
 
         pr_pv_map = {"pr": pr_rel_docs, "pv": pv_rel_docs}
 
@@ -462,8 +517,9 @@ class search_engine:
 
         if len(filtered_weights_pr_pv) == 2:
             for doc_id, score in filtered_scores_pr_pv[1].items():
-                if doc_id in title_rel_docs_bm25_stem.keys() or doc_id in title_binary_docs_stem_no_stem.keys():
+                if doc_id in title_rel_docs_bm25_stem.keys():
                     filtered_scores_pr_pv[1][doc_id] = score * 2
+
 
         final_scores = filtered_scores + filtered_scores_pr_pv
         finals_weights = filtered_weights + filtered_weights_pr_pv
