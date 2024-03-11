@@ -9,9 +9,10 @@ import math
 from nltk.stem.porter import *
 from nltk.util import ngrams
 from google.cloud import storage
-from collections import Counter
 from nltk.corpus import stopwords
 from inverted_index_gcp import InvertedIndex
+from collections import Counter
+
 
 PROJECT_ID = 'final-project-415618'
 
@@ -52,6 +53,7 @@ STEM_ANCHOR_FOLDER = 'inverted_anchor_stem'
 INDEX_FOLDER = 'inverted_indices'
 
 DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
+STEM_TITLE_INVERTED_INDEX = 'term_posting_list_dict_title.pkl'
 PR_FILE = "pr_full_run/part-00000-d70a55fc-ebc4-4920-8b29-b57541c978c0-c000.csv.gz"
 PV_FILE = "wid2pv.pkl"
 
@@ -77,6 +79,8 @@ class search_engine:
         self.averageDl = dict()  # document len dict
         self.stemmer = PorterStemmer()
         self.id_to_title = dict()
+        self.stem_title_posting_lists = dict()
+        self.sorted_ranked_docs = Counter()
         self._load_indices()
 
     def _load_indices(self):
@@ -98,6 +102,8 @@ class search_engine:
             self.load_index(INDEX_FOLDER, STEMMING_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, NO_STEM_TITLE_FOLDER)
             self.load_index(INDEX_FOLDER, STEM_ANCHOR_FOLDER)
+            self.stem_title_posting_lists = pickle.loads(
+                bucket.get_blob(STEM_TITLE_INVERTED_INDEX).download_as_string())
 
             print("loading doc id 2 title index")
             self.id_to_title = pickle.loads(bucket.get_blob(DOC_ID_TO_TITLE_FILE).download_as_string())
@@ -165,9 +171,7 @@ class search_engine:
         - tfidf_or_bm25 (bool): Flag indicating whether to use TF-IDF or BM25 scoring.
 
         Returns:
-        - body_ranked_docs (dict): Dictionary containing ranked documents for the body index.
-        - title_ranked_docs (dict): Dictionary containing ranked documents for the title index.
-        - title_binary_docs (dict): Dictionary containing ranked documents for the title index by binary.
+        - ranked_docs (dict): Dictionary containing ranked relevant documents.
         """
 
         if binary:
@@ -302,6 +306,17 @@ class search_engine:
                 ranked_docs.update({doc_id: rank})
         return ranked_docs
 
+    def get_stem_title_results(self, query_words):
+
+        rel_docs = dict()
+        unique_words = np.unique(query_words)
+        for term in unique_words:
+            if term in self.stem_title_posting_lists:
+                posting_list = self.stem_title_posting_lists[term]
+                for doc_id, tf in posting_list:
+                    rel_docs.setdefault(doc_id, []).append((term, tf))
+        return rel_docs
+
     def fit_query(self, query, bigram, stem):
         """
         Prepares and processes a query based on specified options.
@@ -371,11 +386,19 @@ class search_engine:
 
         for term, posting_list in posting_list_lists:
             for doc_id, tf in posting_list:
-                rel_docs.setdefault(doc_id, []).append((term, tf))
+                if index_name == STEMMING_BODY_FOLDER:
+                    if tf > 10:
+                        rel_docs.setdefault(doc_id, []).append((term, tf))
+                elif index_name == STEM_ANCHOR_FOLDER:
+                    if tf > 2:
+                        rel_docs.setdefault(doc_id, []).append((term, tf))
+                else:
+                    rel_docs.setdefault(doc_id, []).append((term, tf))
+
         return rel_docs
 
     @staticmethod
-    def calculate_bm25(idf, tf, dl, avg_dl, k=1.5, b=0.75):
+    def calculate_bm25(idf, tf, dl, avg_dl, k=1.7, b=0.75):
         """
         Calculates the BM25 ranking score for a term in a document.
 
@@ -530,7 +553,7 @@ class search_engine:
         Filters out non-empty scores and their corresponding weights from the input dictionaries.
 
         Parameters:
-        - all_scores (dict): A dictionary containing scores for each key.
+        - all_scores (dict): A dictionary containing dictionaries scores for each key.
         - all_weights (dict): A dictionary containing weights for each key.
 
         Returns:
@@ -575,7 +598,7 @@ class search_engine:
             ranked_res = self.rank_candidates_by_index(first_res, index_name)
             return ranked_res
 
-    def find_candidates_parallel(self, query):
+    def find_candidates_parallel(self, query_words, query_words_no_stem):
         """
         Finds candidates in parallel based on the provided query.
 
@@ -591,22 +614,26 @@ class search_engine:
         """
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # first: True = bigram,  False = no bigram,  second: True = stem, false = no stem
-            query_words = self.fit_query(query, False, True)
+            results = {}
             body_future = executor.submit(self.find_candidates_by_index, query_words, STEMMING_BODY_FOLDER)
-            title_future = executor.submit(self.anchor_candidates, query_words, STEMMING_TITLE_FOLDER, False)
+            # title_future = executor.submit(self.anchor_candidates, query_words, STEMMING_TITLE_FOLDER, False)
             anchor_future = executor.submit(self.anchor_candidates, query_words, STEM_ANCHOR_FOLDER)
 
-            query_words_no_stem = self.fit_query(query, False, False)
             title_future_no_stem = executor.submit(self.find_candidates_by_index, query_words_no_stem,
                                                    NO_STEM_TITLE_FOLDER)
+            futures = {body_future: STEMMING_BODY_FOLDER, anchor_future: STEM_ANCHOR_FOLDER,
+                       title_future_no_stem: NO_STEM_TITLE_FOLDER}
+            for future in concurrent.futures.as_completed(futures):
+                folder = futures[future]
+                results[folder] = future.result()
 
-            # Retrieve results when ready
-            body_rel_docs_bm25_stem = body_future.result()
-            title_rel_docs_bm25_stem = title_future.result()
-            anchor_binary_docs_stem = anchor_future.result()
-            title_rel_docs_bm25_no_stem = title_future_no_stem.result()
-
-            return body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem
+            return tuple(results.get(futures[future]) for future in futures)
+            # body_rel_docs_bm25_stem = body_future.result()
+            # title_rel_docs_bm25_stem = title_future.result()
+            # anchor_binary_docs_stem = anchor_future.result()
+            # title_rel_docs_bm25_no_stem = title_future_no_stem.result()
+            #
+            # return body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem
 
     def search(self, query, weights):
         """
@@ -619,32 +646,43 @@ class search_engine:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
 
-        body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, \
-            anchor_binary_docs_stem, title_rel_docs_bm25_no_stem = self.find_candidates_parallel(query)
+        query_words = self.fit_query(query, False, True)
+        query_words_no_stem = self.fit_query(query, False, False)
+        rel_docs_title = self.get_stem_title_results(query_words)
+        title_rel_docs_bm25_stem = self.rank_candidates_by_index(rel_docs_title, STEMMING_TITLE_FOLDER)
+        # ranked_title_docs_list = list(ranked_title_docs.keys())
 
+        # all_weights_keys = {'title_bm25_stem': weights['title_bm25_stem']*3, 'pr': weights['pr'], 'pv': weights['pv']}
+        #
+        # pr_rel_docs = self.pr_docs_from_relevant_docs(ranked_title_docs_list)
+        # pv_rel_docs = self.pv_docs_from_relevant_docs(ranked_title_docs_list)
+        # scores = {'title_bm25_stem': ranked_title_docs, 'pr': pr_rel_docs, 'pv': pv_rel_docs}
+        # filtered_scores, filtered_weights = self.get_non_empty_scores(scores, all_weights_keys)
+        # self.sorted_ranked_docs = self.merge_ranking(filtered_scores, filtered_weights, 200)
+        body_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem \
+            = self.find_candidates_parallel(query_words, query_words_no_stem)
         all_scores = {
-            'body_bm25_stem': body_rel_docs_bm25_stem, 'title_bm25_stem': title_rel_docs_bm25_stem,
-             'anchor_stem': anchor_binary_docs_stem,
+            'body_bm25_stem': body_rel_docs_bm25_stem,
+            'title_bm25_stem': title_rel_docs_bm25_stem,
+            'anchor_stem': anchor_binary_docs_stem,
             'title_bm25_no_stem': title_rel_docs_bm25_no_stem}
 
         filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
+        # final_scores = filtered_scores + [dict(self.sorted_ranked_docs)]
+        # filtered_weights = filtered_weights + [0.4]
 
         rankings = self.merge_ranking(filtered_scores, filtered_weights, 700)
-
-        first_1000_docs = []
-        first_1000_docs_dict = dict()
+        first_700_docs = []
+        first_700_docs_dict = dict()
 
         for doc_id, score in rankings:
-            first_1000_docs.append(doc_id)
-            first_1000_docs_dict[doc_id] = score
+            first_700_docs.append(doc_id)
+            first_700_docs_dict[doc_id] = score
 
         already_weighted = [1]
-
-        pr_rel_docs = self.pr_docs_from_relevant_docs(first_1000_docs)
-        pv_rel_docs = self.pv_docs_from_relevant_docs(first_1000_docs)
-
+        pr_rel_docs = self.pr_docs_from_relevant_docs(first_700_docs)
+        pv_rel_docs = self.pv_docs_from_relevant_docs(first_700_docs)
         pr_pv_map = {"pr": pr_rel_docs, "pv": pv_rel_docs}
-
         filtered_scores_pr_pv, filtered_weights_pr_pv = self.get_non_empty_scores(pr_pv_map, weights)
 
         if len(filtered_weights_pr_pv) == 2:
@@ -652,11 +690,9 @@ class search_engine:
                 if doc_id in title_rel_docs_bm25_stem.keys():
                     filtered_scores_pr_pv[1][doc_id] = score * 2
 
-        final_scores = [first_1000_docs_dict] + filtered_scores_pr_pv
+        final_scores = [first_700_docs_dict] + filtered_scores_pr_pv
         finals_weights = already_weighted + filtered_weights_pr_pv
+        final_rankings = self.merge_ranking(final_scores, finals_weights)
 
-        rankings = self.merge_ranking(final_scores, finals_weights)
-
-        # add titles
-        res = list(map(lambda x: (str(x[0]), self.id_to_title.get(x[0], 'Unknown')), rankings))
+        res = list(map(lambda x: (str(x[0]), self.id_to_title.get(x[0], 'Unknown')), final_rankings))
         return res
