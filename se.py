@@ -57,6 +57,9 @@ STEM_TITLE_INVERTED_INDEX = 'term_posting_list_dict_title.pkl'
 PR_FILE = "pr_full_run/part-00000-d70a55fc-ebc4-4920-8b29-b57541c978c0-c000.csv.gz"
 PV_FILE = "wid2pv.pkl"
 
+ALL_INDEXES_WE_USED = ['body_bm25_stem', 'title_bm25_stem', 'anchor_stem', 'title_bm25_no_stem', 'pr', 'pv']
+WEIGHTS_LIST = [0.98, 0.44, 0.12, 0.26, 0.74, 0.22]
+
 lock = threading.Lock()
 
 
@@ -635,7 +638,7 @@ class search_engine:
             #
             # return body_rel_docs_bm25_stem, title_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem
 
-    def search(self, query, weights):
+    def search(self, query):
         """
         Executes a search query and returns ranked search results.
 
@@ -646,30 +649,23 @@ class search_engine:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
 
+
         query_words = self.fit_query(query, False, True)
         query_words_no_stem = self.fit_query(query, False, False)
         rel_docs_title = self.get_stem_title_results(query_words)
         title_rel_docs_bm25_stem = self.rank_candidates_by_index(rel_docs_title, STEMMING_TITLE_FOLDER)
-        # ranked_title_docs_list = list(ranked_title_docs.keys())
 
-        # all_weights_keys = {'title_bm25_stem': weights['title_bm25_stem']*3, 'pr': weights['pr'], 'pv': weights['pv']}
-        #
-        # pr_rel_docs = self.pr_docs_from_relevant_docs(ranked_title_docs_list)
-        # pv_rel_docs = self.pv_docs_from_relevant_docs(ranked_title_docs_list)
-        # scores = {'title_bm25_stem': ranked_title_docs, 'pr': pr_rel_docs, 'pv': pv_rel_docs}
-        # filtered_scores, filtered_weights = self.get_non_empty_scores(scores, all_weights_keys)
-        # self.sorted_ranked_docs = self.merge_ranking(filtered_scores, filtered_weights, 200)
         body_rel_docs_bm25_stem, anchor_binary_docs_stem, title_rel_docs_bm25_no_stem \
             = self.find_candidates_parallel(query_words, query_words_no_stem)
+
         all_scores = {
             'body_bm25_stem': body_rel_docs_bm25_stem,
             'title_bm25_stem': title_rel_docs_bm25_stem,
             'anchor_stem': anchor_binary_docs_stem,
             'title_bm25_no_stem': title_rel_docs_bm25_no_stem}
 
+        weights = {key: value for key, value in zip(ALL_INDEXES_WE_USED, WEIGHTS_LIST)}
         filtered_scores, filtered_weights = self.get_non_empty_scores(all_scores, weights)
-        # final_scores = filtered_scores + [dict(self.sorted_ranked_docs)]
-        # filtered_weights = filtered_weights + [0.4]
 
         rankings = self.merge_ranking(filtered_scores, filtered_weights, 700)
         first_700_docs = []

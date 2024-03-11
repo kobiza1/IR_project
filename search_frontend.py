@@ -33,10 +33,8 @@ def search():
 
     res = []
     query = request.args.get('query', '')
-    weights = request.args.get('random_weights', '{}')
-    weights = json.loads(weights)
     if len(query) != 0:
-        res = se.search(query, weights)
+        res = se.search(query)
     return jsonify(res)
 
 
