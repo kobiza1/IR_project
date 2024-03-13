@@ -13,8 +13,9 @@ from nltk.corpus import stopwords
 from inverted_index_gcp import InvertedIndex
 from collections import Counter
 
-
-PROJECT_ID = 'final-project-415618'
+PROJECT_ID = 'irproject-417012'
+BUCKET_NAME = "lebron_the_bucket_208627935"
+INDEX_FOLDER = 'inverted_indices'
 
 TUPLE_SIZE = 6
 english_stopwords = frozenset(stopwords.words("english"))
@@ -27,46 +28,26 @@ corpus_stopwords = ["category", "references", "also", "external", "links", "may"
                     'consider']
 
 SIZE_OF_WIKI = 6348910
-
-# params = {'max_docs_from_binary_title': 848, 'max_docs_from_binary_body': 859, 'bm25_body_weight': 8.798177098065569,
-#           'bm25_title_weight': 0.49852365380857405, 'bm25_body_bi_weight': 0.3017628167759724,
-#           'bm25_title_bi_weight': 7.194777117032163,
-#           'body_cosine_score': 3.3006609064263843, 'title_cosine_score': 4.252156540716102,
-#           'pr_weight': 2.0879280338073336, 'pv_weight': 5.483394450683551}
-
 ALL_STOP_WORDS = english_stopwords.union(corpus_stopwords)
 RE_WORD = re.compile(r"""[\#\@\w](['\-]?\w){2,24}""", re.UNICODE)
-BUCKET_NAME = "tfidf_bucket_318437159"
+ALL_INDEXES_WE_USED = ['body_bm25_stem', 'title_bm25_stem', 'anchor_stem', 'title_bm25_no_stem', 'pr', 'pv']
+WEIGHTS_LIST = [0.98, 0.44, 0.12, 0.26, 0.74, 0.22]
+lock = threading.Lock()
+
+# BIGRAM_BODY_FOLDER = 'inverted_text_with_bigram'
+# BIGRAM_TITLE_FOLDER = 'inverted_title_with_bigram'
+# NO_STEM_ANCHOR_FOLDER = 'inverted_anchor_no_stem'
+# NO_STEM_BODY_FOLDER = 'inverted_text_no_stem'
+
 
 STEMMING_BODY_FOLDER = 'inverted_text_with_stemming'
 STEMMING_TITLE_FOLDER = 'inverted_title_with_stemming'
-
-BIGRAM_BODY_FOLDER = 'inverted_text_with_bigram'
-BIGRAM_TITLE_FOLDER = 'inverted_title_with_bigram'
-
-NO_STEM_BODY_FOLDER = 'inverted_title_no_stem'
-NO_STEM_TITLE_FOLDER = 'inverted_text_no_stem'
-
-NO_STEM_ANCHOR_FOLDER = 'inverted_anchor_no_stem'
+NO_STEM_TITLE_FOLDER = 'inverted_title_no_stem'
 STEM_ANCHOR_FOLDER = 'inverted_anchor_stem'
-
-INDEX_FOLDER = 'inverted_indices'
-
 DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
 STEM_TITLE_INVERTED_INDEX = 'term_posting_list_dict_title.pkl'
-PR_FILE = "pr_full_run/part-00000-d70a55fc-ebc4-4920-8b29-b57541c978c0-c000.csv.gz"
+PR_FILE = "pr_full_run/part-00000-275eeefa-cfe3-4433-8a5c-60999d2682b4-c000.csv.gz"
 PV_FILE = "wid2pv.pkl"
-
-ALL_INDEXES_WE_USED = ['body_bm25_stem', 'title_bm25_stem', 'anchor_stem', 'title_bm25_no_stem', 'pr', 'pv']
-WEIGHTS_LIST = [0.98, 0.44, 0.12, 0.26, 0.74, 0.22]
-
-lock = threading.Lock()
-
-
-# PV_MEAN = 674.0488855666746
-# PV_STD = 55916.041828254696
-# PR_MEAN = 0.9999999999999324
-# PR_STD = 12.416830511713206
 
 
 class search_engine:
@@ -648,7 +629,6 @@ class search_engine:
         Returns:
         - list: A list of tuples containing document IDs and their corresponding titles.
         """
-
 
         query_words = self.fit_query(query, False, True)
         query_words_no_stem = self.fit_query(query, False, False)

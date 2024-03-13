@@ -58,13 +58,13 @@ def results_quality(true_list, predicted_list):
     return round(2.0 / (1.0 / p5 + 1.0 / f1_30), 3)
 
 
-url = 'http://34.173.195.111:8080'
+url = 'http://34.42.68.16:8080'
 
 # good_very_good_mucho_good = ['bioinformatics', 'Who painted "Starry Night"?', 'artificial intelligence',
 #                              'nanotechnology', 'neuroscience', 'snowboard']
 DOC_ID_TO_TITLE_FILE = 'id2title.pkl'
-PROJECT_ID = 'final-project-415618'
-BUCKET_NAME = "tfidf_bucket_318437159"
+PROJECT_ID = 'irproject-417012'
+BUCKET_NAME = "lebron_the_bucket_208627935"
 
 # client = storage.Client(project=PROJECT_ID)
 # bucket = client.get_bucket(BUCKET_NAME)
@@ -72,7 +72,6 @@ BUCKET_NAME = "tfidf_bucket_318437159"
 
 with open('results.txt', 'a') as f:
     for i in range(1000):
-
 
         total_duration = 0
         total_result = 0

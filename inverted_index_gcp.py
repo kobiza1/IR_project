@@ -1,4 +1,3 @@
-import os
 from collections import Counter
 import itertools
 from pathlib import Path
@@ -6,9 +5,8 @@ import pickle
 from google.cloud import storage
 from collections import defaultdict
 from contextlib import closing
-from google.oauth2 import service_account
 
-PROJECT_ID = 'final-project-415618'
+PROJECT_ID = 'irproject-417012'
 
 
 def get_bucket(bucket_name):
@@ -166,7 +164,7 @@ class InvertedIndex:
                     posting_list.append((doc_id, tf))
                 yield w, posting_list
 
-    def read_a_posting_list(self, w, bucket_name=None):
+    def read_a_posting_list(self, w, bucket_name=None, tf_threshold=0):
         posting_list = []
         if w not in self.posting_locs:
             return posting_list
